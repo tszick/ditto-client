@@ -1,0 +1,25 @@
+{
+  "name": "ditto-client",
+  "version": "0.1.0",
+  "description": "Node.js client for the Ditto distributed cache (TCP binary + HTTP REST)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.8"
+  }
+}

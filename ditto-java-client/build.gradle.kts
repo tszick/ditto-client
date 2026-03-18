@@ -1,0 +1,30 @@
+plugins {
+    `java-library`
+}
+
+group   = "io.ditto"
+version = "1.0.0"
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Used internally for HTTP JSON parsing — not exposed in the public API.
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+}
+
+// Produce a plain JAR without a version suffix so consumers can reference it
+// with a stable file path: build/libs/ditto-java-client.jar
+tasks.jar {
+    archiveVersion.set("")
+    manifest {
+        attributes("Implementation-Title" to "ditto-java-client")
+    }
+}
