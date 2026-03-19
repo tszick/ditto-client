@@ -42,8 +42,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Setup Gradle (Java only)
+        if: matrix.language == 'java-kotlin'
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
@@ -52,10 +56,10 @@ jobs:
       - name: Build (Java only)
         if: matrix.language == 'java-kotlin'
         working-directory: ${{ matrix.working-directory }}
-        run: ./gradlew assemble
+        run: gradle assemble
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
           upload: true
