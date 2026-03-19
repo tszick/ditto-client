@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 from enum import Enum
-from typing import Literal
 
 
 @dataclasses.dataclass(frozen=True)

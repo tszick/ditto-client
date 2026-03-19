@@ -12,7 +12,6 @@
  *   - 4-byte big-endian length prefix before the bincode payload
  */
 
-import { DittoError } from './types.js';
 import type { DittoErrorCode } from './types.js';
 
 // ---------------------------------------------------------------------------

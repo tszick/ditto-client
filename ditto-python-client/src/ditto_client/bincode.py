@@ -23,7 +23,7 @@ from __future__ import annotations
 import struct
 from typing import NamedTuple
 
-from .types import DittoError, DittoErrorCode
+from .types import DittoErrorCode
 
 # ---------------------------------------------------------------------------
 # ClientRequest encoding

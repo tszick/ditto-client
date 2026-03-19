@@ -106,7 +106,7 @@ class DittoHttpClientBase:
             data: Any = json.loads(body)
             message = data.get("message") or data.get("error") or body
         except (ValueError, AttributeError):
-            pass
+            pass  # Non-JSON body; fall back to raw string as the error message
         if status == 503:
             code: DittoErrorCode = DittoErrorCode.NODE_INACTIVE
         elif status == 504:

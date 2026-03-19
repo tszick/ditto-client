@@ -88,7 +88,7 @@ class DittoTcpClient:
             try:
                 self._sock.shutdown(socket.SHUT_RDWR)
             except OSError:
-                pass
+                pass  # Socket may already be closed; ignore shutdown errors
             self._sock.close()
             self._sock = None
 
