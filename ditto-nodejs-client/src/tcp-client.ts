@@ -4,16 +4,29 @@
  * Uses the bincode 1.x binary protocol over a persistent TCP connection.
  * Requests are serialized; only one in-flight request at a time.
  *
- * Usage:
+ * ## Basic usage (manual lifecycle)
  *   const client = new DittoTcpClient({ host: 'localhost' });
  *   await client.connect();
  *   await client.set('key', 'value', 60);
  *   const result = await client.get('key');
  *   await client.close();
+ *
+ * ## Auto-reconnect mode (DITTO-01)
+ *   const client = new DittoTcpClient({ host: 'localhost', autoReconnect: true });
+ *   await client.connect(); // initial connect; reconnects automatically on loss
+ *   await client.set('key', 'value');
+ *   client.destroy(); // shut down permanently
+ *
+ * In auto-reconnect mode:
+ * - Requests sent while disconnected are queued and flushed after reconnection.
+ * - Reconnect uses exponential backoff (baseBackoffMs → maxBackoffMs).
+ * - If maxReconnectAttempts (> 0) is reached, the offline queue is rejected
+ *   and no further reconnect attempts are made (circuit open).
  */
 
 import * as net from 'node:net';
 import {
+  encodeAuth,
   encodeGet,
   encodeSet,
   encodeDelete,
@@ -31,25 +44,73 @@ export interface DittoTcpClientOptions {
   port?: number;
   /** Optional TCP auth token. */
   authToken?: string;
+
+  // ── Auto-reconnect options (DITTO-01) ──────────────────────────────────────
+  /**
+   * Automatically reconnect on disconnect with exponential backoff.
+   * When enabled, requests sent while disconnected are queued and retried.
+   * Default: false
+   */
+  autoReconnect?: boolean;
+  /**
+   * Maximum number of consecutive reconnect attempts before the circuit
+   * opens and all queued requests are rejected. 0 = unlimited.
+   * Default: 0
+   */
+  maxReconnectAttempts?: number;
+  /** Base reconnect backoff in milliseconds. Default: 200 */
+  baseBackoffMs?: number;
+  /** Maximum reconnect backoff in milliseconds. Default: 30_000 */
+  maxBackoffMs?: number;
+}
+
+/** A waiter represents one pending request (sent or queued). */
+interface Waiter {
+  resolve: (r: ClientResponse) => void;
+  reject:  (e: Error) => void;
+  /** Encoded frame to (re)send after reconnect. Null for requests already sent. */
+  frame:   Buffer | null;
 }
 
 export class DittoTcpClient {
   private readonly host: string;
   private readonly port: number;
   private readonly authToken?: string;
-  private socket:   net.Socket | null = null;
 
-  // Incoming byte accumulator and pending request queue.
-  private recvBuf: Buffer = Buffer.alloc(0);
-  private pending: Array<{
-    resolve: (r: ClientResponse) => void;
-    reject:  (e: Error) => void;
-  }> = [];
+  private readonly autoReconnect:        boolean;
+  private readonly maxReconnectAttempts: number;
+  private readonly baseBackoffMs:        number;
+  private readonly maxBackoffMs:         number;
+
+  private socket:   net.Socket | null = null;
+  private recvBuf:  Buffer = Buffer.alloc(0);
+
+  /**
+   * Requests that have been SENT and are awaiting a response (ordered FIFO).
+   * `frame` is null — the bytes are already on the wire.
+   */
+  private inflight: Waiter[] = [];
+
+  /**
+   * Requests queued while disconnected (not yet written to the socket).
+   * Flushed in order after reconnect + re-auth.
+   */
+  private offlineQueue: Waiter[] = [];
+
+  private reconnectAttempts = 0;
+  private reconnecting      = false;
+  private destroyed         = false;
+  private reconnectTimer:   ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: DittoTcpClientOptions = {}) {
     this.host = opts.host ?? 'localhost';
     this.port = opts.port ?? 7777;
     this.authToken = opts.authToken;
+
+    this.autoReconnect        = opts.autoReconnect        ?? false;
+    this.maxReconnectAttempts = opts.maxReconnectAttempts ?? 0;
+    this.baseBackoffMs        = opts.baseBackoffMs        ?? 200;
+    this.maxBackoffMs         = opts.maxBackoffMs         ?? 30_000;
   }
 
   // ---------------------------------------------------------------------------
@@ -58,41 +119,29 @@ export class DittoTcpClient {
 
   /** Open the TCP connection. Must be called before any other method. */
   async connect(): Promise<void> {
-    if (this.socket) {
-      return;
-    }
-    await new Promise<void>((resolve, reject) => {
-      const sock = new net.Socket();
-      sock.connect(this.port, this.host, () => {
-        this.socket = sock;
-        resolve();
-      });
-      sock.on('data', (chunk: Buffer) => this.onData(chunk));
-      sock.on('error', (err) => this.onError(err));
-      sock.on('close', () => this.onClose());
-      sock.once('error', reject); // capture connection errors
-    });
-    if (this.authToken) {
-      const { encodeAuth } = await import('./bincode.js');
-      const resp = await this.send(encodeAuth(this.authToken));
-      if (resp.type === 'Error') {
-        this.close();
-        throw new DittoError(resp.code, resp.message);
-      }
-      if (resp.type !== 'AuthOk') {
-        this.close();
-        throw new Error(`Unexpected auth response: ${resp.type}`);
-      }
-    }
+    if (this.destroyed) throw new Error('Client has been destroyed.');
+    if (this.socket)    return;
+    await this.doConnect();
   }
 
-  /** Gracefully close the connection. */
-  close(): Promise<void> {
-    return new Promise((resolve) => {
+  /** Gracefully close the connection. Disables auto-reconnect permanently. */
+  async close(): Promise<void> {
+    this.destroyed = true;
+    this.cancelReconnectTimer();
+    this.rejectOfflineQueue(new Error('Client closed.'));
+    await new Promise<void>((resolve) => {
       if (!this.socket) { resolve(); return; }
       this.socket.end(() => resolve());
       this.socket = null;
     });
+  }
+
+  /**
+   * Shut down the client immediately (alias for close).
+   * Rejects all queued requests and cancels pending reconnects.
+   */
+  destroy(): void {
+    void this.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -145,16 +194,28 @@ export class DittoTcpClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Internal send / receive
+  // Internal: send / receive
   // ---------------------------------------------------------------------------
 
   private send(frame: Buffer): Promise<ClientResponse> {
     return new Promise((resolve, reject) => {
+      if (this.destroyed) {
+        reject(new Error('Client has been destroyed.'));
+        return;
+      }
+
       if (!this.socket) {
+        if (this.autoReconnect) {
+          // Queue for later; circuit breaker check happens on reconnect failure.
+          this.offlineQueue.push({ resolve, reject, frame });
+          return;
+        }
         reject(new Error('Not connected. Call connect() first.'));
         return;
       }
-      this.pending.push({ resolve, reject });
+
+      // Connected: send immediately and register as in-flight.
+      this.inflight.push({ resolve, reject, frame: null });
       this.socket.write(frame);
     });
   }
@@ -162,7 +223,6 @@ export class DittoTcpClient {
   private onData(chunk: Buffer): void {
     this.recvBuf = Buffer.concat([this.recvBuf, chunk]);
 
-    // Consume as many complete messages as possible.
     while (this.recvBuf.length >= 4) {
       const payloadLen = this.recvBuf.readUInt32BE(0);
       const totalLen   = 4 + payloadLen;
@@ -171,7 +231,7 @@ export class DittoTcpClient {
       const payload = this.recvBuf.subarray(4, totalLen);
       this.recvBuf  = this.recvBuf.subarray(totalLen);
 
-      const waiter = this.pending.shift();
+      const waiter = this.inflight.shift();
       if (!waiter) continue;
 
       try {
@@ -183,15 +243,153 @@ export class DittoTcpClient {
   }
 
   private onError(err: Error): void {
-    for (const w of this.pending) w.reject(err);
-    this.pending = [];
-    this.socket  = null;
+    this.handleDisconnect(err);
   }
 
   private onClose(): void {
-    const err = new Error('Connection closed by server.');
-    for (const w of this.pending) w.reject(err);
-    this.pending = [];
+    this.handleDisconnect(new Error('Connection closed by server.'));
+  }
+
+  private handleDisconnect(err: Error): void {
     this.socket  = null;
+    this.recvBuf = Buffer.alloc(0);
+
+    // Move in-flight requests back to the front of the offline queue so they
+    // are retried in order after reconnect.
+    const toRetry = this.inflight.splice(0);
+    // Re-attach the original frame so we can resend — but in-flight requests
+    // had frame=null, meaning the frame is already lost. We cannot recover the
+    // frame here. We must reject these specific requests.
+    // (Keeping frame=null requests in the queue would stall the queue forever.)
+    for (const w of toRetry) {
+      if (w.frame !== null) {
+        // Queued but not yet written — safe to retry.
+        this.offlineQueue.unshift(w);
+      } else {
+        // Already written — response may or may not have been processed.
+        // Reject with a retryable error message.
+        w.reject(new Error(`Connection lost before response was received: ${err.message}`));
+      }
+    }
+
+    if (this.autoReconnect && !this.destroyed) {
+      this.scheduleReconnect();
+    } else {
+      this.rejectOfflineQueue(err);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal: auto-reconnect logic (DITTO-01)
+  // ---------------------------------------------------------------------------
+
+  private scheduleReconnect(): void {
+    if (this.reconnecting || this.destroyed) return;
+
+    // Circuit breaker: stop if max attempts exceeded.
+    if (this.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.maxReconnectAttempts) {
+      const err = new Error(
+        `Circuit open: ${this.reconnectAttempts} reconnect attempts failed for ${this.host}:${this.port}`,
+      );
+      this.rejectOfflineQueue(err);
+      return;
+    }
+
+    const backoff = Math.min(
+      this.baseBackoffMs * Math.pow(2, this.reconnectAttempts),
+      this.maxBackoffMs,
+    );
+    this.reconnecting = true;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnecting   = false;
+      void this.doConnect().catch(() => {
+        // doConnect already handles scheduling the next attempt on failure.
+      });
+    }, backoff);
+  }
+
+  private cancelReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnecting = false;
+  }
+
+  private async doConnect(): Promise<void> {
+    if (this.destroyed) return;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const sock = new net.Socket();
+        sock.connect(this.port, this.host, () => {
+          this.socket = sock;
+          resolve();
+        });
+        sock.on('data',  (chunk: Buffer) => this.onData(chunk));
+        sock.on('error', (err: Error)    => this.onError(err));
+        sock.on('close', ()              => this.onClose());
+        sock.once('error', reject); // capture initial connect errors
+      });
+    } catch {
+      this.socket = null;
+      this.reconnectAttempts++;
+      if (this.autoReconnect && !this.destroyed) {
+        this.scheduleReconnect();
+      } else {
+        this.rejectOfflineQueue(new Error(`Failed to connect to ${this.host}:${this.port}`));
+      }
+      return;
+    }
+
+    // Connected — reset backoff counter.
+    this.reconnectAttempts = 0;
+
+    // Authenticate before flushing queued requests.
+    if (this.authToken) {
+      const authFrame = encodeAuth(this.authToken);
+      let authResp: ClientResponse;
+      try {
+        authResp = await new Promise<ClientResponse>((resolve, reject) => {
+          this.inflight.push({ resolve, reject, frame: null });
+          this.socket!.write(authFrame);
+        });
+      } catch (err) {
+        // Auth send failed — socket already disconnected; reconnect loop will retry.
+        return;
+      }
+      if (authResp.type === 'Error') {
+        await this.close();
+        this.rejectOfflineQueue(new DittoError(authResp.code, authResp.message));
+        return;
+      }
+      if (authResp.type !== 'AuthOk') {
+        await this.close();
+        this.rejectOfflineQueue(new Error(`Unexpected auth response: ${authResp.type}`));
+        return;
+      }
+    }
+
+    // Flush offline queue.
+    await this.flushOfflineQueue();
+  }
+
+  private async flushOfflineQueue(): Promise<void> {
+    while (this.offlineQueue.length > 0 && this.socket) {
+      const waiter = this.offlineQueue.shift()!;
+      if (waiter.frame === null) {
+        // Should not happen after handleDisconnect logic, but guard anyway.
+        waiter.reject(new Error('Internal: queued request has no frame to send.'));
+        continue;
+      }
+      this.inflight.push({ resolve: waiter.resolve, reject: waiter.reject, frame: null });
+      this.socket.write(waiter.frame);
+    }
+  }
+
+  private rejectOfflineQueue(err: Error): void {
+    const queue = this.offlineQueue.splice(0);
+    for (const w of queue) w.reject(err);
   }
 }
