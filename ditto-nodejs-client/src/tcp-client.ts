@@ -31,6 +31,8 @@ import {
   encodeSet,
   encodeDelete,
   encodePing,
+  encodeWatch,
+  encodeUnwatch,
   decodeResponse,
   type ClientResponse,
 } from './bincode.js';
@@ -84,6 +86,10 @@ export class DittoTcpClient {
 
   private socket:   net.Socket | null = null;
   private recvBuf:  Buffer = Buffer.alloc(0);
+
+  // DITTO-02: watch callbacks keyed by watched key.
+  // WatchEvent frames from the server are routed here instead of the inflight queue.
+  private watchCallbacks: Map<string, (value: Buffer | null, version: number) => void> = new Map();
 
   /**
    * Requests that have been SENT and are awaiting a response (ordered FIFO).
@@ -193,6 +199,34 @@ export class DittoTcpClient {
     throw new Error(`Unexpected response: ${resp.type}`);
   }
 
+  // DITTO-02: watch / unwatch ------------------------------------------------
+
+  /**
+   * Subscribe to changes on `key`. The `callback` is called whenever the
+   * server pushes a WatchEvent for this key. `value` is null when the key
+   * was deleted. Multiple calls for the same key replace the previous callback.
+   *
+   * The subscription is active until `unwatch(key)` is called or the client
+   * is closed. After an auto-reconnect the subscription is re-registered.
+   */
+  async watch(key: string, callback: (value: Buffer | null, version: number) => void): Promise<void> {
+    this.watchCallbacks.set(key, callback);
+    const resp = await this.send(encodeWatch(key));
+    if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
+    if (resp.type !== 'Watching') throw new Error(`Unexpected response to Watch: ${resp.type}`);
+  }
+
+  /**
+   * Cancel the subscription for `key`. No-op if the key is not being watched.
+   */
+  async unwatch(key: string): Promise<void> {
+    this.watchCallbacks.delete(key);
+    if (!this.socket) return; // already disconnected — nothing to send
+    const resp = await this.send(encodeUnwatch(key));
+    if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
+    if (resp.type !== 'Unwatched') throw new Error(`Unexpected response to Unwatch: ${resp.type}`);
+  }
+
   // ---------------------------------------------------------------------------
   // Internal: send / receive
   // ---------------------------------------------------------------------------
@@ -231,14 +265,26 @@ export class DittoTcpClient {
       const payload = this.recvBuf.subarray(4, totalLen);
       this.recvBuf  = this.recvBuf.subarray(totalLen);
 
+      let decoded: ReturnType<typeof decodeResponse>;
+      try {
+        decoded = decodeResponse(payload);
+      } catch (err) {
+        // Malformed frame — reject the next waiter so the queue doesn't stall.
+        const waiter = this.inflight.shift();
+        waiter?.reject(err instanceof Error ? err : new Error(String(err)));
+        continue;
+      }
+
+      // DITTO-02: WatchEvent frames are server-push; route to callback, not inflight queue.
+      if (decoded.type === 'WatchEvent') {
+        const cb = this.watchCallbacks.get(decoded.key);
+        cb?.(decoded.value, decoded.version);
+        continue;
+      }
+
       const waiter = this.inflight.shift();
       if (!waiter) continue;
-
-      try {
-        waiter.resolve(decodeResponse(payload));
-      } catch (err) {
-        waiter.reject(err instanceof Error ? err : new Error(String(err)));
-      }
+      waiter.resolve(decoded);
     }
   }
 
@@ -371,8 +417,28 @@ export class DittoTcpClient {
       }
     }
 
+    // DITTO-02: re-register active watch subscriptions before flushing the queue.
+    await this.reRegisterWatches();
+
     // Flush offline queue.
     await this.flushOfflineQueue();
+  }
+
+  /** Re-send Watch for all active callbacks after a reconnect. */
+  private async reRegisterWatches(): Promise<void> {
+    for (const key of this.watchCallbacks.keys()) {
+      if (!this.socket) break;
+      // Send Watch frame directly (bypass send() to avoid adding to inflight before auth).
+      const frame = encodeWatch(key);
+      await new Promise<void>((resolve, reject) => {
+        this.inflight.push({
+          resolve: () => resolve(),
+          reject,
+          frame: null,
+        });
+        this.socket!.write(frame);
+      });
+    }
   }
 
   private async flushOfflineQueue(): Promise<void> {

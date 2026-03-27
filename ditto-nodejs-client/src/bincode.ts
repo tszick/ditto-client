@@ -67,6 +67,28 @@ export function encodePing(): Buffer {
   return frame(buf);
 }
 
+/** Watch { key } – variant 5 (DITTO-02) */
+export function encodeWatch(key: string): Buffer {
+  const keyBuf = Buffer.from(key, 'utf8');
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length);
+  let   off    = 0;
+  buf.writeUInt32LE(5, off);           off += 4;  // variant: Watch
+  writeu64LE(buf, keyBuf.length, off);  off += 8;
+  keyBuf.copy(buf, off);
+  return frame(buf);
+}
+
+/** Unwatch { key } – variant 6 (DITTO-02) */
+export function encodeUnwatch(key: string): Buffer {
+  const keyBuf = Buffer.from(key, 'utf8');
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length);
+  let   off    = 0;
+  buf.writeUInt32LE(6, off);           off += 4;  // variant: Unwatch
+  writeu64LE(buf, keyBuf.length, off);  off += 8;
+  keyBuf.copy(buf, off);
+  return frame(buf);
+}
+
 /** Auth { token } – variant 4 */
 export function encodeAuth(token: string): Buffer {
   const tokenBuf = Buffer.from(token, 'utf8');
@@ -83,13 +105,17 @@ export function encodeAuth(token: string): Buffer {
 // ---------------------------------------------------------------------------
 
 export type ClientResponse =
-  | { type: 'Value';    key: string; value: Buffer; version: number }
-  | { type: 'Ok';       version: number }
+  | { type: 'Value';      key: string; value: Buffer; version: number }
+  | { type: 'Ok';         version: number }
   | { type: 'Deleted' }
   | { type: 'NotFound' }
   | { type: 'Pong' }
   | { type: 'AuthOk' }
-  | { type: 'Error';    code: DittoErrorCode; message: string };
+  | { type: 'Error';      code: DittoErrorCode; message: string }
+  // DITTO-02
+  | { type: 'Watching' }
+  | { type: 'Unwatched' }
+  | { type: 'WatchEvent'; key: string; value: Buffer | null; version: number };
 
 const ERROR_CODE_NAMES: DittoErrorCode[] = [
   'NodeInactive',
@@ -129,6 +155,22 @@ export function decodeResponse(buf: Buffer): ClientResponse {
       const message = buf.subarray(off, off + msgLen).toString('utf8');
       const code    = ERROR_CODE_NAMES[codeIdx] ?? 'InternalError';
       return { type: 'Error', code, message };
+    }
+    // DITTO-02 variants
+    case 7: return { type: 'Watching' };
+    case 8: return { type: 'Unwatched' };
+    case 9: { // WatchEvent { key, value: Option<Bytes>, version }
+      const keyLen = readu64LE(buf, off); off += 8;
+      const key    = buf.subarray(off, off + keyLen).toString('utf8'); off += keyLen;
+      // Option<Bytes>: 1-byte discriminant (0=None, 1=Some) + u64 len + bytes if Some
+      const hasValue = buf.readUInt8(off); off += 1;
+      let value: Buffer | null = null;
+      if (hasValue === 1) {
+        const valLen = readu64LE(buf, off); off += 8;
+        value = Buffer.from(buf.subarray(off, off + valLen));
+      }
+      const version = readu64LE(buf, off);
+      return { type: 'WatchEvent', key, value, version };
     }
     default:
       throw new Error(`Unknown ClientResponse variant: ${variant}`);

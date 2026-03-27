@@ -1,0 +1,6 @@
+# Client dist
+ditto-nodejs-client/dist/
+ditto-nodejs-client/node_modules/
+ditto-java-client/build/
+ditto-java-client/.gradle/
+
