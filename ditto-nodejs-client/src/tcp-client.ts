@@ -64,6 +64,10 @@ export interface DittoTcpClientOptions {
   baseBackoffMs?: number;
   /** Maximum reconnect backoff in milliseconds. Default: 30_000 */
   maxBackoffMs?: number;
+  /** Socket inactivity timeout in milliseconds. Default: 10000 */
+  requestTimeoutMs?: number;
+  /** Maximum accepted response frame size in bytes. Default: 8 MiB */
+  maxFrameBytes?: number;
 }
 
 /** A waiter represents one pending request (sent or queued). */
@@ -83,6 +87,8 @@ export class DittoTcpClient {
   private readonly maxReconnectAttempts: number;
   private readonly baseBackoffMs:        number;
   private readonly maxBackoffMs:         number;
+  private readonly requestTimeoutMs:     number;
+  private readonly maxFrameBytes:        number;
 
   private socket:   net.Socket | null = null;
   private recvBuf:  Buffer = Buffer.alloc(0);
@@ -117,6 +123,8 @@ export class DittoTcpClient {
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? 0;
     this.baseBackoffMs        = opts.baseBackoffMs        ?? 200;
     this.maxBackoffMs         = opts.maxBackoffMs         ?? 30_000;
+    this.requestTimeoutMs     = opts.requestTimeoutMs     ?? 10_000;
+    this.maxFrameBytes        = opts.maxFrameBytes        ?? (8 * 1024 * 1024);
   }
 
   // ---------------------------------------------------------------------------
@@ -259,6 +267,12 @@ export class DittoTcpClient {
 
     while (this.recvBuf.length >= 4) {
       const payloadLen = this.recvBuf.readUInt32BE(0);
+      if (payloadLen > this.maxFrameBytes) {
+        this.socket?.destroy(
+          new Error(`Incoming frame too large (${payloadLen} bytes > limit ${this.maxFrameBytes} bytes)`),
+        );
+        return;
+      }
       const totalLen   = 4 + payloadLen;
       if (this.recvBuf.length < totalLen) break;
 
@@ -376,6 +390,10 @@ export class DittoTcpClient {
         sock.on('data',  (chunk: Buffer) => this.onData(chunk));
         sock.on('error', (err: Error)    => this.onError(err));
         sock.on('close', ()              => this.onClose());
+        sock.setTimeout(this.requestTimeoutMs);
+        sock.on('timeout', () => {
+          sock.destroy(new Error(`Socket timeout after ${this.requestTimeoutMs}ms`));
+        });
         sock.once('error', reject); // capture initial connect errors
       });
     } catch {

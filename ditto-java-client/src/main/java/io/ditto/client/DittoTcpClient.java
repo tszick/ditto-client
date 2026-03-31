@@ -33,6 +33,10 @@ import java.nio.charset.StandardCharsets;
  */
 public class DittoTcpClient implements Closeable {
 
+    private static final int DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+    private static final int DEFAULT_READ_TIMEOUT_MS    = 10_000;
+    private static final int DEFAULT_MAX_FRAME_BYTES    = 8 * 1024 * 1024;
+
     private final String host;
     private final int    port;
     private final String authToken;
@@ -61,8 +65,10 @@ public class DittoTcpClient implements Closeable {
 
     /** Open the TCP connection. Must be called before any other method. */
     public synchronized void connect() throws IOException {
-        socket = new Socket(host, port);
+        socket = new Socket();
+        socket.connect(new java.net.InetSocketAddress(host, port), DEFAULT_CONNECT_TIMEOUT_MS);
         socket.setTcpNoDelay(true);
+        socket.setSoTimeout(DEFAULT_READ_TIMEOUT_MS);
         in  = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         out = new BufferedOutputStream(socket.getOutputStream());
 
@@ -233,6 +239,11 @@ public class DittoTcpClient implements Closeable {
     private Response readResponse() throws IOException {
         // 4-byte big-endian length prefix
         int payloadLen = in.readInt();
+        if (payloadLen <= 0 || payloadLen > DEFAULT_MAX_FRAME_BYTES) {
+            throw new IOException(
+                    "Incoming frame has invalid size: " + payloadLen + " (limit " + DEFAULT_MAX_FRAME_BYTES + ")"
+            );
+        }
         byte[] payload = new byte[payloadLen];
         in.readFully(payload);
         return decodeResponse(payload);

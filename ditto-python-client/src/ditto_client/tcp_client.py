@@ -40,10 +40,22 @@ class DittoTcpClient:
             client.set('k', 'v')
     """
 
-    def __init__(self, host: str = "localhost", port: int = 7777, auth_token: str | None = None) -> None:
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 7777,
+        auth_token: str | None = None,
+        *,
+        connect_timeout_secs: float = 10.0,
+        socket_timeout_secs: float = 10.0,
+        max_frame_bytes: int = 8 * 1024 * 1024,
+    ) -> None:
         self._host = host
         self._port = port
         self._auth_token = auth_token
+        self._connect_timeout_secs = connect_timeout_secs
+        self._socket_timeout_secs = socket_timeout_secs
+        self._max_frame_bytes = max_frame_bytes
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
 
@@ -66,8 +78,9 @@ class DittoTcpClient:
         """Open the TCP connection. Must be called before any other method."""
         if self._sock is not None:
             return
-        sock = socket.create_connection((self._host, self._port))
+        sock = socket.create_connection((self._host, self._port), timeout=self._connect_timeout_secs)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.settimeout(self._socket_timeout_secs)
         self._sock = sock
 
         if self._auth_token is not None:
@@ -160,6 +173,10 @@ class DittoTcpClient:
         # 4-byte big-endian length prefix
         header = self._recvn(4)
         payload_len = struct.unpack(">I", header)[0]
+        if payload_len > self._max_frame_bytes:
+            raise ConnectionError(
+                f"Incoming frame too large ({payload_len} bytes > limit {self._max_frame_bytes} bytes)"
+            )
         payload = self._recvn(payload_len)
         return decode_response(payload)
 

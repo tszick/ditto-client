@@ -26,12 +26,15 @@ export interface DittoHttpClientOptions {
    * Set to false to accept self-signed certs. Default: true.
    */
   rejectUnauthorized?: boolean;
+  /** Request timeout in milliseconds. Default: 10000 */
+  timeoutMs?: number;
 }
 
 export class DittoHttpClientBase {
   private readonly baseUrl:    string;
   private readonly authHeader: string | undefined;
   private readonly agent:      https.Agent | undefined;
+  private readonly timeoutMs:  number;
 
   constructor(opts: DittoHttpClientOptions = {}) {
     const scheme = opts.tls ? 'https' : 'http';
@@ -49,6 +52,8 @@ export class DittoHttpClientBase {
         rejectUnauthorized: opts.rejectUnauthorized ?? true,
       });
     }
+
+    this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 
   // ── Shared infrastructure (used by generated endpoint methods) ──────────────
@@ -63,14 +68,70 @@ export class DittoHttpClientBase {
     };
     if (this.authHeader) headers['Authorization'] = this.authHeader;
 
-    const fetchOpts: RequestInit & { dispatcher?: unknown } = { ...init, headers };
+    const url = `${this.baseUrl}${path}`;
 
-    // Attach the https.Agent when TLS is enabled (undici / Node.js fetch path).
     if (this.agent) {
-      (fetchOpts as Record<string, unknown>)['agent'] = this.agent;
+      return this.requestHttps(url, init.method ?? 'GET', headers, init.body);
     }
 
-    return fetch(`${this.baseUrl}${path}`, fetchOpts);
+    return fetch(url, {
+      ...init,
+      headers,
+      signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
+    });
+  }
+
+  private requestHttps(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body: unknown,
+  ): Promise<Response> {
+    return new Promise<Response>((resolve, reject) => {
+      const req = https.request(url, { method, headers, agent: this.agent }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        res.on('end', () => {
+          const status = res.statusCode ?? 500;
+          const statusText = res.statusMessage ?? 'Unknown';
+          const responseHeaders = new Headers();
+          for (const [k, v] of Object.entries(res.headers)) {
+            if (typeof v === 'string') responseHeaders.set(k, v);
+            else if (Array.isArray(v)) responseHeaders.set(k, v.join(', '));
+          }
+          const responseBody = (status === 204 || status === 205 || status === 304)
+            ? null
+            : Buffer.concat(chunks);
+          resolve(new Response(responseBody, {
+            status,
+            statusText,
+            headers: responseHeaders,
+          }));
+        });
+      });
+
+      req.setTimeout(this.timeoutMs, () => {
+        req.destroy(new Error(`HTTPS request timeout after ${this.timeoutMs}ms`));
+      });
+      req.on('error', reject);
+
+      if (body === undefined || body === null) {
+        req.end();
+        return;
+      }
+
+      if (typeof body === 'string') {
+        req.end(body);
+        return;
+      }
+
+      if (body instanceof Buffer || body instanceof Uint8Array) {
+        req.end(body);
+        return;
+      }
+
+      reject(new Error('Unsupported HTTPS request body type'));
+    });
   }
 
   /** @internal */

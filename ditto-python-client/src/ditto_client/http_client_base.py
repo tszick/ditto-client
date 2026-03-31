@@ -32,11 +32,13 @@ class DittoHttpClientBase:
         username: str | None = None,
         password: str | None = None,
         reject_unauthorized: bool = True,
+        timeout_secs: float = 10.0,
     ) -> None:
         scheme = "https" if tls else "http"
         self._base_url = f"{scheme}://{host}:{port}"
         self._auth_header: str | None = None
         self._ssl_ctx: ssl.SSLContext | None = None
+        self._timeout_secs = timeout_secs
 
         if username and password:
             creds = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -90,7 +92,7 @@ class DittoHttpClientBase:
             method=method,
         )
         try:
-            with urllib.request.urlopen(req, context=self._ssl_ctx) as resp:
+            with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=self._timeout_secs) as resp:
                 return resp.status, resp.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             # HTTPError carries a status code and body.

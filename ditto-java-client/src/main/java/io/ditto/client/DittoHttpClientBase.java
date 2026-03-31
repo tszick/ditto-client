@@ -9,9 +9,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * DittoHttpClientBase – infrastructure for the generated {@link DittoHttpClient}.
@@ -59,10 +65,32 @@ public abstract class DittoHttpClientBase {
             this.authHeader = null;
         }
 
-        this.httpClient = HttpClient.newBuilder()
+        HttpClient.Builder httpBuilder = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+                .connectTimeout(Duration.ofSeconds(10));
+
+        if (b.tls && !b.rejectUnauthorized) {
+            try {
+                TrustManager[] trustAll = new TrustManager[] {
+                        new X509TrustManager() {
+                            @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                            @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                            @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                        }
+                };
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, trustAll, new SecureRandom());
+                SSLParameters sslParams = new SSLParameters();
+                sslParams.setEndpointIdentificationAlgorithm(null);
+                System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+                httpBuilder.sslContext(sslContext);
+                httpBuilder.sslParameters(sslParams);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to initialize relaxed TLS context", e);
+            }
+        }
+
+        this.httpClient = httpBuilder.build();
     }
 
     // ── Public lifecycle ──────────────────────────────────────────────────────
@@ -122,12 +150,14 @@ public abstract class DittoHttpClientBase {
         String  host     = "localhost";
         int     port     = 7778;
         boolean tls      = false;
+        boolean rejectUnauthorized = true;
         String  username;
         String  password;
 
         public B host(String host)   { this.host     = host;   return (B) this; }
         public B port(int port)      { this.port     = port;   return (B) this; }
         public B tls(boolean tls)    { this.tls      = tls;    return (B) this; }
+        public B rejectUnauthorized(boolean r) { this.rejectUnauthorized = r; return (B) this; }
         public B username(String u)  { this.username = u;      return (B) this; }
         public B password(String p)  { this.password = p;      return (B) this; }
 
