@@ -6,7 +6,13 @@
  */
 
 import { DittoHttpClientBase } from './http-client-base.js';
-import type { DittoGetResult, DittoSetResult, DittoStatsResult } from './types.js';
+import type {
+  DittoDeleteByPatternResult,
+  DittoGetResult,
+  DittoSetResult,
+  DittoSetTtlByPatternResult,
+  DittoStatsResult,
+} from './types.js';
 
 export class DittoHttpClient extends DittoHttpClientBase {
 
@@ -50,6 +56,37 @@ export class DittoHttpClient extends DittoHttpClientBase {
     if (resp.status === 404 || resp.status === 204) return resp.status === 204;
     await this.assertOk(resp);
     return true;
+  }
+
+  /** Delete all keys matching a glob-style pattern ('*' wildcard). */
+  async deleteByPattern(pattern: string): Promise<DittoDeleteByPatternResult> {
+    const resp = await this.request('/keys/delete-by-pattern', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern }),
+    });
+    await this.assertOk(resp);
+    const body = await resp.json() as { deleted: number };
+    return { deleted: body.deleted };
+  }
+
+  /**
+   * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+   * ttlSecs <= 0 or omitted removes TTL from matched keys.
+   */
+  async setTtlByPattern(pattern: string, ttlSecs?: number): Promise<DittoSetTtlByPatternResult> {
+    const payload: { pattern: string; ttl_secs?: number } = { pattern };
+    if (ttlSecs !== undefined && ttlSecs > 0) {
+      payload.ttl_secs = ttlSecs;
+    }
+    const resp = await this.request('/keys/ttl-by-pattern', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    await this.assertOk(resp);
+    const body = await resp.json() as { updated: number };
+    return { updated: body.updated };
   }
 
   /** Return cache statistics for this node. Available on HTTP client only. */

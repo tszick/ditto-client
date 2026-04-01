@@ -19,6 +19,18 @@ class DittoSetResult:
     version: int
 
 
+@dataclasses.dataclass(frozen=True)
+class DittoDeleteByPatternResult:
+    """Returned by delete_by_pattern()."""
+    deleted: int
+
+
+@dataclasses.dataclass(frozen=True)
+class DittoSetTtlByPatternResult:
+    """Returned by set_ttl_by_pattern()."""
+    updated: int
+
+
 @dataclasses.dataclass
 class DittoStatsResult:
     """Returned by stats() (HTTP client only)."""

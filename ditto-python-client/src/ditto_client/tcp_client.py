@@ -15,11 +15,19 @@ from .bincode import (
     ClientResponse,
     decode_response,
     encode_delete,
+    encode_delete_by_pattern,
     encode_get,
     encode_ping,
     encode_set,
+    encode_set_ttl_by_pattern,
 )
-from .types import DittoError, DittoGetResult, DittoSetResult
+from .types import (
+    DittoDeleteByPatternResult,
+    DittoError,
+    DittoGetResult,
+    DittoSetResult,
+    DittoSetTtlByPatternResult,
+)
 
 
 class DittoTcpClient:
@@ -153,6 +161,27 @@ class DittoTcpClient:
             return True
         if resp.type == "NotFound":
             return False
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def delete_by_pattern(self, pattern: str) -> DittoDeleteByPatternResult:
+        """Delete all keys matching a glob-style pattern ('*' wildcard)."""
+        resp = self._send(encode_delete_by_pattern(pattern))
+        if resp.type == "PatternDeleted":
+            return DittoDeleteByPatternResult(deleted=resp.deleted)  # type: ignore[union-attr]
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def set_ttl_by_pattern(self, pattern: str, ttl_secs: int = 0) -> DittoSetTtlByPatternResult:
+        """
+        Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+        ``ttl_secs <= 0`` removes TTL from matched keys.
+        """
+        resp = self._send(encode_set_ttl_by_pattern(pattern, ttl_secs))
+        if resp.type == "PatternTtlUpdated":
+            return DittoSetTtlByPatternResult(updated=resp.updated)  # type: ignore[union-attr]
         if resp.type == "Error":
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")

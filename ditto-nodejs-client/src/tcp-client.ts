@@ -30,14 +30,21 @@ import {
   encodeGet,
   encodeSet,
   encodeDelete,
+  encodeDeleteByPattern,
   encodePing,
+  encodeSetTtlByPattern,
   encodeWatch,
   encodeUnwatch,
   decodeResponse,
   type ClientResponse,
 } from './bincode.js';
 import { DittoError } from './types.js';
-import type { DittoGetResult, DittoSetResult } from './types.js';
+import type {
+  DittoDeleteByPatternResult,
+  DittoGetResult,
+  DittoSetResult,
+  DittoSetTtlByPatternResult,
+} from './types.js';
 
 export interface DittoTcpClientOptions {
   /** Hostname or IP address of the dittod node. Default: 'localhost' */
@@ -204,6 +211,28 @@ export class DittoTcpClient {
     if (resp.type === 'Deleted')  return true;
     if (resp.type === 'NotFound') return false;
     if (resp.type === 'Error')    throw new DittoError(resp.code, resp.message);
+    throw new Error(`Unexpected response: ${resp.type}`);
+  }
+
+  /**
+   * Delete all keys matching a glob-style pattern ('*' wildcard).
+   * Returns the number of deleted keys.
+   */
+  async deleteByPattern(pattern: string): Promise<DittoDeleteByPatternResult> {
+    const resp = await this.send(encodeDeleteByPattern(pattern));
+    if (resp.type === 'PatternDeleted') return { deleted: resp.deleted };
+    if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
+    throw new Error(`Unexpected response: ${resp.type}`);
+  }
+
+  /**
+   * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+   * ttlSecs <= 0 or omitted removes TTL from matched keys.
+   */
+  async setTtlByPattern(pattern: string, ttlSecs?: number): Promise<DittoSetTtlByPatternResult> {
+    const resp = await this.send(encodeSetTtlByPattern(pattern, ttlSecs));
+    if (resp.type === 'PatternTtlUpdated') return { updated: resp.updated };
+    if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     throw new Error(`Unexpected response: ${resp.type}`);
   }
 

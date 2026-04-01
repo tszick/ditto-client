@@ -11,8 +11,11 @@ Bincode 1.x default rules:
 Wire framing (added by tcp_server.rs):
   - 4-byte big-endian payload-length prefix before every message
 
-ClientRequest variant indices: Get=0, Set=1, Delete=2, Ping=3
-ClientResponse variant indices: Value=0, Ok=1, Deleted=2, NotFound=3, Pong=4, Error=5
+ClientRequest variant indices: Get=0, Set=1, Delete=2, Ping=3, Auth=4,
+                               Watch=5, Unwatch=6, DeleteByPattern=7, SetTtlByPattern=8
+ClientResponse variant indices: Value=0, Ok=1, Deleted=2, NotFound=3, Pong=4, AuthOk=5,
+                                Error=6, Watching=7, Unwatched=8, WatchEvent=9,
+                                PatternDeleted=10, PatternTtlUpdated=11
 ErrorCode variant indices: NodeInactive=0, NoQuorum=1, KeyNotFound=2,
                             InternalError=3, WriteTimeout=4, ValueTooLarge=5,
                             KeyLimitReached=6
@@ -80,6 +83,21 @@ def encode_auth(token: str) -> bytes:
     return _frame(struct.pack("<I", 4) + _pack_string(token))
 
 
+def encode_delete_by_pattern(pattern: str) -> bytes:
+    return _frame(struct.pack("<I", 7) + _pack_string(pattern))
+
+
+def encode_set_ttl_by_pattern(pattern: str, ttl_secs: int = 0) -> bytes:
+    has_ttl = ttl_secs > 0
+    payload = (
+        struct.pack("<I", 8)
+        + _pack_string(pattern)
+        + struct.pack("B", 1 if has_ttl else 0)
+        + (struct.pack("<Q", ttl_secs) if has_ttl else b"")
+    )
+    return _frame(payload)
+
+
 # ---------------------------------------------------------------------------
 # ClientResponse decoding
 # ---------------------------------------------------------------------------
@@ -102,7 +120,15 @@ class _Error(NamedTuple):
     code: DittoErrorCode
     message: str
 
-ClientResponse = _Value | _Ok | _Simple | _Error
+class _PatternDeleted(NamedTuple):
+    type: str          # 'PatternDeleted'
+    deleted: int
+
+class _PatternTtlUpdated(NamedTuple):
+    type: str          # 'PatternTtlUpdated'
+    updated: int
+
+ClientResponse = _Value | _Ok | _Simple | _Error | _PatternDeleted | _PatternTtlUpdated
 
 
 def decode_response(buf: bytes) -> ClientResponse:
@@ -156,5 +182,13 @@ def decode_response(buf: bytes) -> ClientResponse:
         message  = read_bytes().decode("utf-8")
         code = _ERROR_CODE_NAMES[code_idx] if code_idx < len(_ERROR_CODE_NAMES) else DittoErrorCode.INTERNAL_ERROR
         return _Error("Error", code, message)
+
+    if variant == 10:  # PatternDeleted { deleted }
+        deleted = read_u64()
+        return _PatternDeleted("PatternDeleted", deleted)
+
+    if variant == 11:  # PatternTtlUpdated { updated }
+        updated = read_u64()
+        return _PatternTtlUpdated("PatternTtlUpdated", updated)
 
     raise ValueError(f"Unknown ClientResponse variant: {variant}")

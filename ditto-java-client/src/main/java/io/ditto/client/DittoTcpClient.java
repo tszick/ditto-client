@@ -166,6 +166,34 @@ public class DittoTcpClient implements Closeable {
         };
     }
 
+    /**
+     * Delete all keys matching a glob-style pattern ('*' wildcard).
+     */
+    public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern) throws IOException {
+        sendFrame(encodeDeleteByPattern(pattern));
+        Response resp = readResponse();
+        return switch (resp.type) {
+            case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
+            case ERROR           -> throw new DittoException(resp.errorCode, resp.message);
+            default              -> throw new IOException("Unexpected response: " + resp.type);
+        };
+    }
+
+    /**
+     * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+     * {@code ttlSecs <= 0} removes TTL from matched keys.
+     */
+    public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs)
+            throws IOException {
+        sendFrame(encodeSetTtlByPattern(pattern, ttlSecs));
+        Response resp = readResponse();
+        return switch (resp.type) {
+            case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
+            case ERROR               -> throw new DittoException(resp.errorCode, resp.message);
+            default                  -> throw new IOException("Unexpected response: " + resp.type);
+        };
+    }
+
     // ── Bincode encoding ──────────────────────────────────────────────────────
 
     /** Variant 0: Get { key } */
@@ -221,6 +249,30 @@ public class DittoTcpClient implements Closeable {
         return frame(buf.array());
     }
 
+    /** Variant 7: DeleteByPattern { pattern } */
+    private byte[] encodeDeleteByPattern(String pattern) {
+        byte[]     pb  = pattern.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + pb.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(7);
+        buf.putLong(pb.length);
+        buf.put(pb);
+        return frame(buf.array());
+    }
+
+    /** Variant 8: SetTtlByPattern { pattern, ttl_secs } */
+    private byte[] encodeSetTtlByPattern(String pattern, long ttlSecs) {
+        byte[]  pb     = pattern.getBytes(StandardCharsets.UTF_8);
+        boolean hasTtl = ttlSecs > 0;
+        int     size   = 4 + 8 + pb.length + 1 + (hasTtl ? 8 : 0);
+        ByteBuffer buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(8);
+        buf.putLong(pb.length);
+        buf.put(pb);
+        buf.put(hasTtl ? (byte) 1 : (byte) 0);
+        if (hasTtl) buf.putLong(ttlSecs);
+        return frame(buf.array());
+    }
+
     /** Prepend a 4-byte big-endian length prefix to the payload. */
     private static byte[] frame(byte[] payload) {
         byte[] result = new byte[4 + payload.length];
@@ -251,7 +303,9 @@ public class DittoTcpClient implements Closeable {
 
     // ── Bincode decoding ──────────────────────────────────────────────────────
 
-    private enum ResponseType { VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR }
+    private enum ResponseType {
+        VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, PATTERN_DELETED, PATTERN_TTL_UPDATED
+    }
 
     private static final class Response {
         ResponseType   type;
@@ -259,6 +313,7 @@ public class DittoTcpClient implements Closeable {
         long           version;
         DittoErrorCode errorCode;
         String         message;
+        long           count;
     }
 
     private static Response decodeResponse(byte[] payload) throws IOException {
@@ -292,6 +347,14 @@ public class DittoTcpClient implements Closeable {
                 r.errorCode = DittoErrorCode.fromIndex(codeIdx);
                 r.message   = new String(msgBytes, StandardCharsets.UTF_8);
                 r.type      = ResponseType.ERROR;
+            }
+            case 10 -> { // PatternDeleted { deleted }
+                r.count = buf.getLong();
+                r.type = ResponseType.PATTERN_DELETED;
+            }
+            case 11 -> { // PatternTtlUpdated { updated }
+                r.count = buf.getLong();
+                r.type = ResponseType.PATTERN_TTL_UPDATED;
             }
             default -> throw new IOException("Unknown ClientResponse variant: " + variant);
         }

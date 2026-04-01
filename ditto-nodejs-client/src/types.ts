@@ -9,6 +9,16 @@ export interface DittoSetResult {
   version: number;
 }
 
+/** Value returned by deleteByPattern(). */
+export interface DittoDeleteByPatternResult {
+  deleted: number;
+}
+
+/** Value returned by setTtlByPattern(). */
+export interface DittoSetTtlByPatternResult {
+  updated: number;
+}
+
 /** Value returned by stats(). */
 export interface DittoStatsResult {
   node_id:               string;

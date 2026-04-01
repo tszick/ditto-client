@@ -5,8 +5,10 @@ from .tcp_client import DittoTcpClient
 from .types import (
     DittoError,
     DittoErrorCode,
+    DittoDeleteByPatternResult,
     DittoGetResult,
     DittoSetResult,
+    DittoSetTtlByPatternResult,
     DittoStatsResult,
 )
 
@@ -15,7 +17,9 @@ __all__ = [
     "DittoHttpClient",
     "DittoError",
     "DittoErrorCode",
+    "DittoDeleteByPatternResult",
     "DittoGetResult",
     "DittoSetResult",
+    "DittoSetTtlByPatternResult",
     "DittoStatsResult",
 ]

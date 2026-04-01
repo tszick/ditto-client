@@ -89,6 +89,34 @@ export function encodeUnwatch(key: string): Buffer {
   return frame(buf);
 }
 
+/** DeleteByPattern { pattern } – variant 7 */
+export function encodeDeleteByPattern(pattern: string): Buffer {
+  const patternBuf = Buffer.from(pattern, 'utf8');
+  const buf        = Buffer.allocUnsafe(4 + 8 + patternBuf.length);
+  let   off        = 0;
+  buf.writeUInt32LE(7, off);              off += 4;  // variant: DeleteByPattern
+  writeu64LE(buf, patternBuf.length, off); off += 8;
+  patternBuf.copy(buf, off);
+  return frame(buf);
+}
+
+/** SetTtlByPattern { pattern, ttl_secs } – variant 8 */
+export function encodeSetTtlByPattern(pattern: string, ttlSecs?: number): Buffer {
+  const patternBuf = Buffer.from(pattern, 'utf8');
+  const hasTtl     = ttlSecs !== undefined && ttlSecs > 0;
+  const size       = 4 + 8 + patternBuf.length + 1 + (hasTtl ? 8 : 0);
+  const buf        = Buffer.allocUnsafe(size);
+  let   off        = 0;
+  buf.writeUInt32LE(8, off);              off += 4;  // variant: SetTtlByPattern
+  writeu64LE(buf, patternBuf.length, off); off += 8;
+  patternBuf.copy(buf, off);               off += patternBuf.length;
+  buf.writeUInt8(hasTtl ? 1 : 0, off);     off += 1;
+  if (hasTtl) {
+    writeu64LE(buf, ttlSecs!, off);
+  }
+  return frame(buf);
+}
+
 /** Auth { token } – variant 4 */
 export function encodeAuth(token: string): Buffer {
   const tokenBuf = Buffer.from(token, 'utf8');
@@ -115,7 +143,9 @@ export type ClientResponse =
   // DITTO-02
   | { type: 'Watching' }
   | { type: 'Unwatched' }
-  | { type: 'WatchEvent'; key: string; value: Buffer | null; version: number };
+  | { type: 'WatchEvent'; key: string; value: Buffer | null; version: number }
+  | { type: 'PatternDeleted'; deleted: number }
+  | { type: 'PatternTtlUpdated'; updated: number };
 
 const ERROR_CODE_NAMES: DittoErrorCode[] = [
   'NodeInactive',
@@ -171,6 +201,14 @@ export function decodeResponse(buf: Buffer): ClientResponse {
       }
       const version = readu64LE(buf, off);
       return { type: 'WatchEvent', key, value, version };
+    }
+    case 10: { // PatternDeleted { deleted }
+      const deleted = readu64LE(buf, off);
+      return { type: 'PatternDeleted', deleted };
+    }
+    case 11: { // PatternTtlUpdated { updated }
+      const updated = readu64LE(buf, off);
+      return { type: 'PatternTtlUpdated', updated };
     }
     default:
       throw new Error(`Unknown ClientResponse variant: ${variant}`);

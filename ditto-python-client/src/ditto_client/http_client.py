@@ -7,7 +7,13 @@ import dataclasses
 import json
 
 from .http_client_base import DittoHttpClientBase
-from .types import DittoGetResult, DittoSetResult, DittoStatsResult
+from .types import (
+    DittoDeleteByPatternResult,
+    DittoGetResult,
+    DittoSetResult,
+    DittoSetTtlByPatternResult,
+    DittoStatsResult,
+)
 
 
 class DittoHttpClient(DittoHttpClientBase):
@@ -52,6 +58,38 @@ class DittoHttpClient(DittoHttpClientBase):
             return True
         self._assert_ok(status, body)
         return True
+
+    def delete_by_pattern(self, pattern: str) -> DittoDeleteByPatternResult:
+        """Delete all keys matching a glob-style pattern ('*' wildcard)."""
+        payload = json.dumps({"pattern": pattern}).encode("utf-8")
+        status, body = self._request(
+            "/keys/delete-by-pattern",
+            method="POST",
+            body=payload,
+            content_type="application/json",
+        )
+        self._assert_ok(status, body)
+        data = json.loads(body)
+        return DittoDeleteByPatternResult(deleted=data["deleted"])
+
+    def set_ttl_by_pattern(self, pattern: str, ttl_secs: int = 0) -> DittoSetTtlByPatternResult:
+        """
+        Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+        ``ttl_secs <= 0`` removes TTL from matched keys.
+        """
+        payload_obj = {"pattern": pattern}
+        if ttl_secs > 0:
+            payload_obj["ttl_secs"] = ttl_secs
+        payload = json.dumps(payload_obj).encode("utf-8")
+        status, body = self._request(
+            "/keys/ttl-by-pattern",
+            method="POST",
+            body=payload,
+            content_type="application/json",
+        )
+        self._assert_ok(status, body)
+        data = json.loads(body)
+        return DittoSetTtlByPatternResult(updated=data["updated"])
 
     def stats(self) -> DittoStatsResult:
         """Return cache statistics for this node. Available on HTTP client only."""

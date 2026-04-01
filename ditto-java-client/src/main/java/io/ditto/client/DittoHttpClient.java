@@ -75,6 +75,40 @@ public class DittoHttpClient extends DittoHttpClientBase {
         return true;
     }
 
+    /** Delete all keys matching a glob-style pattern ('*' wildcard). */
+    public DittoDeleteByPatternResult deleteByPattern(String pattern) throws IOException, InterruptedException {
+        String body = mapper.writeValueAsString(Map.of("pattern", pattern));
+        HttpRequest req = requestBuilder("/keys/delete-by-pattern")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> resp = send(req);
+        assertOk(resp);
+        Map<?, ?> payload = mapper.readValue(resp.body(), Map.class);
+        long deleted = ((Number) payload.get("deleted")).longValue();
+        return new DittoDeleteByPatternResult(deleted);
+    }
+
+    /**
+     * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
+     * ttlSecs <= 0 removes TTL from matched keys.
+     */
+    public DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs)
+            throws IOException, InterruptedException {
+        String body = ttlSecs > 0
+                ? mapper.writeValueAsString(Map.of("pattern", pattern, "ttl_secs", ttlSecs))
+                : mapper.writeValueAsString(Map.of("pattern", pattern));
+        HttpRequest req = requestBuilder("/keys/ttl-by-pattern")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> resp = send(req);
+        assertOk(resp);
+        Map<?, ?> payload = mapper.readValue(resp.body(), Map.class);
+        long updated = ((Number) payload.get("updated")).longValue();
+        return new DittoSetTtlByPatternResult(updated);
+    }
+
     /** Return cache statistics for this node. Available on HTTP client only. */
     public DittoStatsResult stats() throws IOException, InterruptedException {
         HttpResponse<String> resp = send(requestBuilder("/stats").GET().build());
