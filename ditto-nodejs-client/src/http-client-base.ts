@@ -28,6 +28,26 @@ export interface DittoHttpClientOptions {
   rejectUnauthorized?: boolean;
   /** Request timeout in milliseconds. Default: 10000 */
   timeoutMs?: number;
+  /** Enable retry with exponential backoff on transient failures. Default: true */
+  retryEnabled?: boolean;
+  /** Maximum retry attempts (in addition to the first request). Default: 2 */
+  maxRetries?: number;
+  /** Base retry backoff in milliseconds. Default: 100 */
+  retryBaseBackoffMs?: number;
+  /** Maximum retry backoff in milliseconds. Default: 2000 */
+  retryMaxBackoffMs?: number;
+  /** Random jitter added to backoff in milliseconds. Default: 100 */
+  retryJitterMs?: number;
+  /** HTTP methods eligible for retry. Default: GET, DELETE */
+  retryMethods?: string[];
+  /** Enable circuit breaker around request execution. Default: false */
+  circuitBreakerEnabled?: boolean;
+  /** Consecutive failures to open circuit. Default: 5 */
+  circuitFailureThreshold?: number;
+  /** Open-state duration in milliseconds before half-open probe. Default: 5000 */
+  circuitOpenMs?: number;
+  /** Successful half-open probes needed to close circuit. Default: 2 */
+  circuitHalfOpenMaxRequests?: number;
 }
 
 export class DittoHttpClientBase {
@@ -35,6 +55,20 @@ export class DittoHttpClientBase {
   private readonly authHeader: string | undefined;
   private readonly agent:      https.Agent | undefined;
   private readonly timeoutMs:  number;
+  private readonly retryEnabled: boolean;
+  private readonly maxRetries: number;
+  private readonly retryBaseBackoffMs: number;
+  private readonly retryMaxBackoffMs: number;
+  private readonly retryJitterMs: number;
+  private readonly retryMethods: Set<string>;
+  private readonly circuitBreakerEnabled: boolean;
+  private readonly circuitFailureThreshold: number;
+  private readonly circuitOpenMs: number;
+  private readonly circuitHalfOpenMaxRequests: number;
+  private circuitState: 'closed' | 'open' | 'half-open' = 'closed';
+  private circuitFailures = 0;
+  private circuitOpenUntilMs = 0;
+  private halfOpenSuccesses = 0;
 
   constructor(opts: DittoHttpClientOptions = {}) {
     const scheme = opts.tls ? 'https' : 'http';
@@ -54,6 +88,16 @@ export class DittoHttpClientBase {
     }
 
     this.timeoutMs = opts.timeoutMs ?? 10_000;
+    this.retryEnabled = opts.retryEnabled ?? true;
+    this.maxRetries = Math.max(0, opts.maxRetries ?? 2);
+    this.retryBaseBackoffMs = Math.max(1, opts.retryBaseBackoffMs ?? 100);
+    this.retryMaxBackoffMs = Math.max(1, opts.retryMaxBackoffMs ?? 2_000);
+    this.retryJitterMs = Math.max(0, opts.retryJitterMs ?? 100);
+    this.retryMethods = new Set((opts.retryMethods ?? ['GET', 'DELETE']).map((m) => m.toUpperCase()));
+    this.circuitBreakerEnabled = opts.circuitBreakerEnabled ?? false;
+    this.circuitFailureThreshold = Math.max(1, opts.circuitFailureThreshold ?? 5);
+    this.circuitOpenMs = Math.max(1, opts.circuitOpenMs ?? 5_000);
+    this.circuitHalfOpenMaxRequests = Math.max(1, opts.circuitHalfOpenMaxRequests ?? 2);
   }
 
   // ── Shared infrastructure (used by generated endpoint methods) ──────────────
@@ -69,16 +113,94 @@ export class DittoHttpClientBase {
     if (this.authHeader) headers['Authorization'] = this.authHeader;
 
     const url = `${this.baseUrl}${path}`;
+    const method = (init.method ?? 'GET').toUpperCase();
+    const canRetry = this.retryEnabled && this.retryMethods.has(method);
+    this.beforeRequest();
 
-    if (this.agent) {
-      return this.requestHttps(url, init.method ?? 'GET', headers, init.body);
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        const resp = this.agent
+          ? await this.requestHttps(url, method, headers, init.body)
+          : await fetch(url, {
+            ...init,
+            method,
+            headers,
+            signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
+          });
+
+        const retryable = this.isRetryableStatus(resp.status);
+        if (retryable && canRetry && attempt < this.maxRetries) {
+          attempt += 1;
+          await sleepMs(this.computeBackoffMs(attempt));
+          continue;
+        }
+
+        if (retryable) {
+          this.recordFailure();
+        } else {
+          this.recordSuccess();
+        }
+        return resp;
+      } catch (err) {
+        if (canRetry && attempt < this.maxRetries) {
+          attempt += 1;
+          await sleepMs(this.computeBackoffMs(attempt));
+          continue;
+        }
+        this.recordFailure();
+        throw err;
+      }
     }
+  }
 
-    return fetch(url, {
-      ...init,
-      headers,
-      signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
-    });
+  private beforeRequest(): void {
+    if (!this.circuitBreakerEnabled) return;
+    const nowMs = Date.now();
+    if (this.circuitState === 'open') {
+      if (nowMs >= this.circuitOpenUntilMs) {
+        this.circuitState = 'half-open';
+        this.halfOpenSuccesses = 0;
+      } else {
+        throw new DittoError('CircuitOpen', 'HTTP client circuit breaker is open');
+      }
+    }
+  }
+
+  private recordFailure(): void {
+    if (!this.circuitBreakerEnabled) return;
+    this.circuitFailures += 1;
+    this.halfOpenSuccesses = 0;
+    if (this.circuitState === 'half-open' || this.circuitFailures >= this.circuitFailureThreshold) {
+      this.circuitState = 'open';
+      this.circuitOpenUntilMs = Date.now() + this.circuitOpenMs;
+    }
+  }
+
+  private recordSuccess(): void {
+    if (!this.circuitBreakerEnabled) return;
+    if (this.circuitState === 'half-open') {
+      this.halfOpenSuccesses += 1;
+      if (this.halfOpenSuccesses >= this.circuitHalfOpenMaxRequests) {
+        this.circuitState = 'closed';
+        this.circuitFailures = 0;
+        this.halfOpenSuccesses = 0;
+      }
+      return;
+    }
+    this.circuitState = 'closed';
+    this.circuitFailures = 0;
+  }
+
+  private isRetryableStatus(status: number): boolean {
+    return status === 429 || status === 503 || status === 504;
+  }
+
+  private computeBackoffMs(attempt: number): number {
+    const exp = Math.min(this.retryMaxBackoffMs, this.retryBaseBackoffMs * Math.pow(2, attempt - 1));
+    const jitter = this.retryJitterMs > 0 ? Math.floor(Math.random() * (this.retryJitterMs + 1)) : 0;
+    return exp + jitter;
   }
 
   private requestHttps(
@@ -138,14 +260,44 @@ export class DittoHttpClientBase {
   protected async assertOk(resp: Response): Promise<void> {
     if (resp.ok) return;
     let message = resp.statusText;
+    let bodyCode: string | undefined;
     try {
       const body = await resp.json() as { error?: string; message?: string };
       message = body.message ?? body.error ?? message;
+      bodyCode = body.error;
     } catch { /* ignore parse errors */ }
-    const code: DittoErrorCode =
-      resp.status === 503 ? 'NodeInactive'  :
-      resp.status === 504 ? 'WriteTimeout'  :
-      resp.status === 404 ? 'KeyNotFound'   : 'InternalError';
+    const code = this.mapHttpError(resp.status, bodyCode);
     throw new DittoError(code, message);
   }
+
+  private mapHttpError(status: number, bodyCode?: string): DittoErrorCode {
+    if (bodyCode) {
+      const mapped = bodyCode as DittoErrorCode;
+      if (isKnownErrorCode(mapped)) return mapped;
+    }
+    if (status === 429) return 'RateLimited';
+    if (status === 503) return 'NodeInactive';
+    if (status === 504) return 'WriteTimeout';
+    if (status === 404) return 'KeyNotFound';
+    return 'InternalError';
+  }
+}
+
+function isKnownErrorCode(code: DittoErrorCode): boolean {
+  return [
+    'NodeInactive',
+    'NoQuorum',
+    'KeyNotFound',
+    'InternalError',
+    'WriteTimeout',
+    'ValueTooLarge',
+    'KeyLimitReached',
+    'RateLimited',
+    'CircuitOpen',
+    'AuthFailed',
+  ].includes(code);
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

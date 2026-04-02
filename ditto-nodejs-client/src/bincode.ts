@@ -155,6 +155,8 @@ const ERROR_CODE_NAMES: DittoErrorCode[] = [
   'WriteTimeout',
   'ValueTooLarge',
   'KeyLimitReached',
+  'RateLimited',
+  'CircuitOpen',
   'AuthFailed',
 ];
 

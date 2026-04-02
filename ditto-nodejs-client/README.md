@@ -67,6 +67,17 @@ new DittoHttpClient(opts?: {
   username?:           string;   // HTTP Basic Auth
   password?:           string;
   rejectUnauthorized?: boolean;  // default: true (set false for self-signed certs)
+  timeoutMs?:          number;   // default: 10000
+  retryEnabled?:       boolean;  // default: true
+  maxRetries?:         number;   // default: 2 (only for retryable methods)
+  retryBaseBackoffMs?: number;   // default: 100
+  retryMaxBackoffMs?:  number;   // default: 2000
+  retryJitterMs?:      number;   // default: 100
+  retryMethods?:       string[]; // default: ['GET', 'DELETE']
+  circuitBreakerEnabled?:         boolean; // default: false
+  circuitFailureThreshold?:       number;  // default: 5
+  circuitOpenMs?:                number;  // default: 5000
+  circuitHalfOpenMaxRequests?:   number;  // default: 2
 })
 ```
 
@@ -138,12 +149,34 @@ interface DittoStatsResult {
 
 type DittoErrorCode =
   | 'NodeInactive' | 'NoQuorum' | 'KeyNotFound'
-  | 'InternalError' | 'WriteTimeout' | 'ValueTooLarge' | 'KeyLimitReached';
+  | 'InternalError' | 'WriteTimeout' | 'ValueTooLarge' | 'KeyLimitReached'
+  | 'RateLimited' | 'CircuitOpen';
 
 class DittoError extends Error {
   code: DittoErrorCode;
 }
 ```
+
+---
+
+## HTTP resilience mode
+
+```typescript
+const client = new DittoHttpClient({
+  host: 'localhost',
+  port: 7778,
+  retryEnabled: true,
+  maxRetries: 3,
+  circuitBreakerEnabled: true,
+  circuitFailureThreshold: 5,
+  circuitOpenMs: 5000,
+});
+```
+
+Notes:
+- Retry defaults to `GET` and `DELETE` only.
+- Retryable statuses: `429`, `503`, `504`.
+- When circuit is open, calls fail fast with `DittoError('CircuitOpen', ...)`.
 
 ---
 
