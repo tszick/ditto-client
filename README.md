@@ -1,12 +1,36 @@
 # Ditto Cache Clients
 
-Client libraries for the [Ditto distributed cache](https://github.com/tszick/ditto-cache). All three clients expose the same API over two protocols: **HTTP REST** and **TCP binary** (Bincode 1.x framing).
+Client libraries for the [Ditto distributed cache](https://github.com/tszick/ditto-cache).
+
+This repository currently contains four client implementations:
+
+- Go (`ditto-go-client`)
+- Java (`ditto-java-client`)
+- Node.js (`ditto-nodejs-client`)
+- Python (`ditto-python-client`)
 
 ---
 
 ## Clients
 
-### Java — `ditto-java-client`
+### Go - `ditto-go-client`
+
+Requires Go 1.22+.
+
+```go
+httpClient := ditto.NewHTTPClient(ditto.HTTPClientOptions{Host: "localhost", Port: 7778})
+stats, _ := httpClient.Stats()
+
+tcp := ditto.NewTCPClient(ditto.TCPClientOptions{Host: "localhost", Port: 7777})
+_ = tcp.Connect()
+_, _ = tcp.SetString("foo", "bar", 60)
+```
+
+Supports HTTP and TCP clients, including pattern operations.
+
+---
+
+### Java - `ditto-java-client`
 
 Requires Java 11+. Built with Gradle.
 
@@ -26,9 +50,9 @@ Both clients are thread-safe. HTTP uses Java's built-in `HttpClient`; TCP uses a
 
 ---
 
-### Node.js — `ditto-nodejs-client`
+### Node.js - `ditto-nodejs-client`
 
-Requires Node.js ≥ 22. TypeScript source, ships compiled JS + type declarations.
+Requires Node.js >= 22. TypeScript source, ships compiled JS + type declarations.
 
 ```ts
 import { DittoTcpClient } from "ditto-client";
@@ -43,9 +67,9 @@ All methods are `async`. The TCP client queues concurrent requests internally.
 
 ---
 
-### Python — `ditto-python-client`
+### Python - `ditto-python-client`
 
-Requires Python ≥ 3.11. No external dependencies (stdlib only).
+Requires Python >= 3.11. No external dependencies (stdlib only).
 
 ```python
 from ditto_client import DittoTcpClient
@@ -59,9 +83,9 @@ Synchronous blocking API. Thread-safe via internal lock. Context manager support
 
 ---
 
-## API reference
+## API Reference
 
-All clients implement the same operations:
+Core operations available across clients:
 
 | Method | Description |
 |--------|-------------|
@@ -69,7 +93,28 @@ All clients implement the same operations:
 | `get(key)` | Get value + version, or `null`/`None` if missing |
 | `set(key, value, ttl)` | Set value; `ttl=0` means no expiry |
 | `delete(key)` | Delete key, returns bool |
-| `stats()` | Cache statistics — HTTP client only |
+| `stats()` | Cache statistics - HTTP client only |
+
+Some clients also expose pattern operations (`delete-by-pattern`, `set-ttl-by-pattern`) and protocol-specific features.
+
+---
+
+## Server Compatibility Notes
+
+Recent Ditto server releases added major runtime capabilities:
+
+- persistence policy gates (backup/export/import default OFF),
+- read-repair and anti-entropy reconciliation,
+- mixed-version probe counters for rolling upgrades,
+- tenant namespace isolation and per-namespace quotas.
+
+Client impact:
+
+- server protocol supports namespace-aware operations (`namespace` field on TCP, `X-Ditto-Namespace` header on HTTP),
+- server may return newer error codes (for example `NamespaceQuotaExceeded`),
+- clients should handle unknown/new error codes gracefully.
+
+---
 
 ## Protocols
 
