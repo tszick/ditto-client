@@ -3,21 +3,24 @@ package io.ditto.client;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 /**
  * DittoHttpClientBase – infrastructure for the generated {@link DittoHttpClient}.
@@ -70,23 +73,18 @@ public abstract class DittoHttpClientBase {
                 .connectTimeout(Duration.ofSeconds(10));
 
         if (b.tls && !b.rejectUnauthorized) {
+            throw new IllegalArgumentException(
+                    "rejectUnauthorized(false) is insecure and is no longer supported. "
+                            + "Use trustedCertPath(...) to trust a specific self-signed/server certificate."
+            );
+        }
+
+        if (b.tls && b.trustedCertPath != null && !b.trustedCertPath.isBlank()) {
             try {
-                TrustManager[] trustAll = new TrustManager[] {
-                        new X509TrustManager() {
-                            @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {}
-                            @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {}
-                            @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-                        }
-                };
-                SSLContext sslContext = SSLContext.getInstance("TLS");
-                sslContext.init(null, trustAll, new SecureRandom());
-                SSLParameters sslParams = new SSLParameters();
-                sslParams.setEndpointIdentificationAlgorithm(null);
-                System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+                SSLContext sslContext = buildPinnedTlsContext(b.trustedCertPath);
                 httpBuilder.sslContext(sslContext);
-                httpBuilder.sslParameters(sslParams);
             } catch (Exception e) {
-                throw new IllegalStateException("Failed to initialize relaxed TLS context", e);
+                throw new IllegalStateException("Failed to initialize TLS context from trustedCertPath", e);
             }
         }
 
@@ -139,6 +137,29 @@ public abstract class DittoHttpClientBase {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
+    /**
+     * Build an SSL context that trusts exactly one provided X.509 certificate.
+     * Useful for self-signed cert deployments without disabling TLS validation.
+     */
+    private static SSLContext buildPinnedTlsContext(String certPath) throws Exception {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        Certificate cert;
+        try (InputStream in = Files.newInputStream(Path.of(certPath))) {
+            cert = cf.generateCertificate(in);
+        }
+
+        KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+        ks.load(null, null);
+        ks.setCertificateEntry("ditto-trusted-cert", cert);
+
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(ks);
+
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
+        return sslContext;
+    }
+
     // ── Builder base ──────────────────────────────────────────────────────────
 
     /**
@@ -151,6 +172,7 @@ public abstract class DittoHttpClientBase {
         int     port     = 7778;
         boolean tls      = false;
         boolean rejectUnauthorized = true;
+        String  trustedCertPath;
         String  username;
         String  password;
 
@@ -158,6 +180,7 @@ public abstract class DittoHttpClientBase {
         public B port(int port)      { this.port     = port;   return (B) this; }
         public B tls(boolean tls)    { this.tls      = tls;    return (B) this; }
         public B rejectUnauthorized(boolean r) { this.rejectUnauthorized = r; return (B) this; }
+        public B trustedCertPath(String path) { this.trustedCertPath = path; return (B) this; }
         public B username(String u)  { this.username = u;      return (B) this; }
         public B password(String p)  { this.password = p;      return (B) this; }
 
