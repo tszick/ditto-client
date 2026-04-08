@@ -27,7 +27,7 @@ export function encodeGet(key: string, namespace?: string): Buffer {
   buf.writeUInt32LE(0, off);           off += 4;  // variant: Get
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -48,7 +48,7 @@ export function encodeSet(key: string, value: Buffer, ttlSecs?: number, namespac
   if (hasTtl) {
     writeu64LE(buf, ttlSecs!, off);    off += 8;
   }
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -61,7 +61,7 @@ export function encodeDelete(key: string, namespace?: string): Buffer {
   buf.writeUInt32LE(2, off);           off += 4;  // variant: Delete
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -81,7 +81,7 @@ export function encodeWatch(key: string, namespace?: string): Buffer {
   buf.writeUInt32LE(5, off);           off += 4;  // variant: Watch
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -94,7 +94,7 @@ export function encodeUnwatch(key: string, namespace?: string): Buffer {
   buf.writeUInt32LE(6, off);           off += 4;  // variant: Unwatch
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -107,7 +107,7 @@ export function encodeDeleteByPattern(pattern: string, namespace?: string): Buff
   buf.writeUInt32LE(7, off);               off += 4;  // variant: DeleteByPattern
   writeu64LE(buf, patternBuf.length, off); off += 8;
   patternBuf.copy(buf, off);               off += patternBuf.length;
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -125,7 +125,7 @@ export function encodeSetTtlByPattern(pattern: string, ttlSecs?: number, namespa
   if (hasTtl) {
     writeu64LE(buf, ttlSecs!, off);        off += 8;
   }
-  off = writeOptionString(buf, off, namespace);
+  writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
