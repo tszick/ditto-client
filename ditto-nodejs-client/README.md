@@ -1,6 +1,6 @@
-# ditto-client
+﻿# ditto-client
 
-Node.js client library for [Ditto](https://github.com/yourorg/ditto) — a distributed in-memory cache.
+Node.js client library for [Ditto](https://github.com/yourorg/ditto) - a distributed in-memory cache.
 
 Two client classes are provided:
 
@@ -9,7 +9,7 @@ Two client classes are provided:
 | `DittoHttpClient` | 7778 | JSON REST over HTTP(S) |
 | `DittoTcpClient`  | 7777 | bincode binary over TCP |
 
-**Requirements:** Node.js ≥ 22
+**Requirements:** Node.js >= 22
 
 ---
 
@@ -21,7 +21,7 @@ npm install ditto-client
 
 ---
 
-## Quick start – HTTP client
+## Quick start - HTTP client
 
 ```typescript
 import { DittoHttpClient } from 'ditto-client';
@@ -29,14 +29,14 @@ import { DittoHttpClient } from 'ditto-client';
 const client = new DittoHttpClient({ host: 'localhost', port: 7778 });
 
 await client.set('user:1', 'Alice', 3600);       // set with TTL
-const result = await client.get('user:1');        // → { value: Buffer, version: 1 }
-console.log(result?.value.toString());            // → "Alice"
+const result = await client.get('user:1');        // -> { value: Buffer, version: 1 }
+console.log(result?.value.toString());            // -> "Alice"
 await client.delete('user:1');
 ```
 
 ---
 
-## Quick start – TCP client
+## Quick start - TCP client
 
 ```typescript
 import { DittoTcpClient } from 'ditto-client';
@@ -46,7 +46,7 @@ await client.connect();
 
 await client.set('session:abc', 'tok_xyz', 300);
 const result = await client.get('session:abc');
-console.log(result?.value.toString());            // → "tok_xyz"
+console.log(result?.value.toString());            // -> "tok_xyz"
 
 await client.close();
 ```
@@ -246,5 +246,5 @@ cd ditto/docker/clients/nodejs
 docker compose up --build --abort-on-container-exit
 ```
 
-The first run compiles the Rust binaries (~3–5 min), subsequent runs use
+The first run compiles the Rust binaries (~3-5 min), subsequent runs use
 Docker's build cache.

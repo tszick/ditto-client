@@ -1,0 +1,77 @@
+name: Client Matrix CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  nodejs:
+    name: Node.js Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ditto-nodejs-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install deps
+        run: npm ci
+      - name: Build
+        run: npm run build
+
+  go:
+    name: Go Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ditto-go-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Test
+        run: go test ./...
+
+  python:
+    name: Python Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ditto-python-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Compile check
+        run: python -m compileall src
+
+  java:
+    name: Java Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ditto-java-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Test
+        run: ./gradlew test --no-daemon

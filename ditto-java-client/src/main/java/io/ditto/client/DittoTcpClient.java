@@ -136,6 +136,14 @@ public class DittoTcpClient implements Closeable {
     }
 
     /**
+     * Set a key in a specific namespace with optional TTL.
+     */
+    public synchronized DittoSetResult set(String key, String value, long ttlSecs, String namespace)
+            throws IOException {
+        return set(key, value.getBytes(StandardCharsets.UTF_8), ttlSecs, namespace);
+    }
+
+    /**
      * Set a key with a raw byte array value and no TTL.
      */
     public synchronized DittoSetResult set(String key, byte[] value) throws IOException {
@@ -147,7 +155,15 @@ public class DittoTcpClient implements Closeable {
      */
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs)
             throws IOException {
-        sendFrame(encodeSet(key, value, ttlSecs, null));
+        return set(key, value, ttlSecs, null);
+    }
+
+    /**
+     * Set a key with a raw byte array value, optional TTL, and optional namespace.
+     */
+    public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs, String namespace)
+            throws IOException {
+        sendFrame(encodeSet(key, value, ttlSecs, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
             case OK    -> new DittoSetResult(resp.version);
