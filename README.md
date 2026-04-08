@@ -90,12 +90,19 @@ Core operations available across clients:
 | Method | Description |
 |--------|-------------|
 | `ping()` | Check node liveness |
-| `get(key)` | Get value + version, or `null`/`None` if missing |
-| `set(key, value, ttl)` | Set value; `ttl=0` means no expiry |
-| `delete(key)` | Delete key, returns bool |
+| `get(key, namespace?)` | Get value + version, or `null`/`None` if missing |
+| `set(key, value, ttl, namespace?)` | Set value; `ttl=0` means no expiry |
+| `delete(key, namespace?)` | Delete key, returns bool |
+| `deleteByPattern(pattern, namespace?)` | Delete keys by glob pattern |
+| `setTtlByPattern(pattern, ttl, namespace?)` | Update TTL by glob pattern |
 | `stats()` | Cache statistics - HTTP client only |
 
 Some clients also expose pattern operations (`delete-by-pattern`, `set-ttl-by-pattern`) and protocol-specific features.
+
+Namespace support is available across all clients:
+
+- HTTP: `X-Ditto-Namespace` request header
+- TCP: optional `namespace` field encoded as bincode `Option<String>`
 
 ---
 

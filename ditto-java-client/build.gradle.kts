@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     `java-library`
 }
 
@@ -16,8 +16,15 @@ repositories {
 }
 
 dependencies {
-    // Used internally for HTTP JSON parsing — not exposed in the public API.
+    // Used internally for HTTP JSON parsing; not exposed in the public API.
     implementation("com.fasterxml.jackson.core:jackson-databind:2.21.2")
+    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 // Produce a plain JAR without a version suffix so consumers can reference it

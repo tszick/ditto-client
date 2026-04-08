@@ -86,9 +86,11 @@ new DittoHttpClient(opts?: {
 | Method | Description | Returns |
 |--------|-------------|---------|
 | `ping()` | Health check | `Promise<boolean>` |
-| `get(key)` | Get a value | `Promise<DittoGetResult \| null>` |
-| `set(key, value, ttlSecs?)` | Set a value with optional TTL | `Promise<DittoSetResult>` |
-| `delete(key)` | Delete a key | `Promise<boolean>` |
+| `get(key, namespace?)` | Get a value | `Promise<DittoGetResult \| null>` |
+| `set(key, value, ttlSecs?, namespace?)` | Set a value with optional TTL | `Promise<DittoSetResult>` |
+| `delete(key, namespace?)` | Delete a key | `Promise<boolean>` |
+| `deleteByPattern(pattern, namespace?)` | Delete keys by glob pattern | `Promise<DittoDeleteByPatternResult>` |
+| `setTtlByPattern(pattern, ttlSecs?, namespace?)` | Update TTL by glob pattern | `Promise<DittoSetTtlByPatternResult>` |
 | `stats()` | Cache statistics | `Promise<DittoStatsResult>` |
 | `close()` | No-op (HTTP is stateless) | `void` |
 
@@ -111,10 +113,25 @@ new DittoTcpClient(opts?: {
 |--------|-------------|---------|
 | `connect()` | Open the TCP connection | `Promise<void>` |
 | `ping()` | Health check | `Promise<boolean>` |
-| `get(key)` | Get a value | `Promise<DittoGetResult \| null>` |
-| `set(key, value, ttlSecs?)` | Set a value with optional TTL | `Promise<DittoSetResult>` |
-| `delete(key)` | Delete a key | `Promise<boolean>` |
+| `get(key, namespace?)` | Get a value | `Promise<DittoGetResult \| null>` |
+| `set(key, value, ttlSecs?, namespace?)` | Set a value with optional TTL | `Promise<DittoSetResult>` |
+| `delete(key, namespace?)` | Delete a key | `Promise<boolean>` |
+| `deleteByPattern(pattern, namespace?)` | Delete keys by glob pattern | `Promise<DittoDeleteByPatternResult>` |
+| `setTtlByPattern(pattern, ttlSecs?, namespace?)` | Update TTL by glob pattern | `Promise<DittoSetTtlByPatternResult>` |
+| `watch(key, callback, namespace?)` | Subscribe to key updates | `Promise<void>` |
+| `unwatch(key, namespace?)` | Unsubscribe from key updates | `Promise<void>` |
 | `close()` | Close the TCP connection | `Promise<void>` |
+
+---
+
+## Namespace usage
+
+```typescript
+await client.set('user:42', 'Alice', 60, 'tenant-acme');
+const hit = await client.get('user:42', 'tenant-acme');
+```
+
+When `namespace` is omitted or blank, the server default namespace is used.
 
 ---
 
