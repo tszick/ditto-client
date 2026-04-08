@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strings"
 )
 
 type responseKind int
@@ -50,14 +51,15 @@ func writeBytes(buf *bytes.Buffer, b []byte) {
 	buf.Write(b)
 }
 
-func encodeGet(key string) []byte {
+func encodeGet(key string, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(0))
 	writeString(&b, key)
+	writeOptionalString(&b, namespace)
 	return frame(b.Bytes())
 }
 
-func encodeSet(key string, value []byte, ttlSecs *uint64) []byte {
+func encodeSet(key string, value []byte, ttlSecs *uint64, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(1))
 	writeString(&b, key)
@@ -68,13 +70,15 @@ func encodeSet(key string, value []byte, ttlSecs *uint64) []byte {
 	} else {
 		b.WriteByte(0)
 	}
+	writeOptionalString(&b, namespace)
 	return frame(b.Bytes())
 }
 
-func encodeDelete(key string) []byte {
+func encodeDelete(key string, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(2))
 	writeString(&b, key)
+	writeOptionalString(&b, namespace)
 	return frame(b.Bytes())
 }
 
@@ -91,14 +95,15 @@ func encodeAuth(token string) []byte {
 	return frame(b.Bytes())
 }
 
-func encodeDeleteByPattern(pattern string) []byte {
+func encodeDeleteByPattern(pattern string, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(7))
 	writeString(&b, pattern)
+	writeOptionalString(&b, namespace)
 	return frame(b.Bytes())
 }
 
-func encodeSetTTLByPattern(pattern string, ttlSecs *uint64) []byte {
+func encodeSetTTLByPattern(pattern string, ttlSecs *uint64, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(8))
 	writeString(&b, pattern)
@@ -108,7 +113,17 @@ func encodeSetTTLByPattern(pattern string, ttlSecs *uint64) []byte {
 	} else {
 		b.WriteByte(0)
 	}
+	writeOptionalString(&b, namespace)
 	return frame(b.Bytes())
+}
+
+func writeOptionalString(buf *bytes.Buffer, s *string) {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		buf.WriteByte(0)
+		return
+	}
+	buf.WriteByte(1)
+	writeString(buf, *s)
 }
 
 func readU32LE(payload []byte, off *int) (uint32, error) {

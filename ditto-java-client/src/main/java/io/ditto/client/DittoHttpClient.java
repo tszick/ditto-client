@@ -38,7 +38,11 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /** Get a value by key. Returns null when the key does not exist or has expired. */
     public DittoGetResult get(String key) throws IOException, InterruptedException {
-        HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key)).GET().build());
+        return get(key, null);
+    }
+
+    public DittoGetResult get(String key, String namespace) throws IOException, InterruptedException {
+        HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key), namespace).GET().build());
         if (resp.statusCode() == 404) return null;
         assertOk(resp);
         Map<?, ?> body    = mapper.readValue(resp.body(), Map.class);
@@ -49,13 +53,18 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /** Set a value. ttlSecs = 0 or omitted means no expiry. */
     public DittoSetResult set(String key, String value) throws IOException, InterruptedException {
-        return set(key, value, 0);
+        return set(key, value, 0, null);
     }
 
     /** Set a value. ttlSecs = 0 or omitted means no expiry. */
     public DittoSetResult set(String key, String value, long ttlSecs) throws IOException, InterruptedException {
+        return set(key, value, ttlSecs, null);
+    }
+
+    /** Set a value in a specific namespace. ttlSecs = 0 or omitted means no expiry. */
+    public DittoSetResult set(String key, String value, long ttlSecs, String namespace) throws IOException, InterruptedException {
         String path = "/key/" + urlEncode(key) + (ttlSecs > 0 ? "?ttl=" + ttlSecs : "");
-        HttpRequest req = requestBuilder(path)
+        HttpRequest req = requestBuilder(path, namespace)
                 .PUT(HttpRequest.BodyPublishers.ofString(value))
                 .header("Content-Type", "text/plain")
                 .build();
@@ -68,7 +77,11 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /** Delete a key. Returns true if the key existed, false if not found. */
     public boolean delete(String key) throws IOException, InterruptedException {
-        HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key)).DELETE().build());
+        return delete(key, null);
+    }
+
+    public boolean delete(String key, String namespace) throws IOException, InterruptedException {
+        HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key), namespace).DELETE().build());
         if (resp.statusCode() == 404) return false;
         if (resp.statusCode() == 204) return true;
         assertOk(resp);
@@ -77,8 +90,12 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /** Delete all keys matching a glob-style pattern ('*' wildcard). */
     public DittoDeleteByPatternResult deleteByPattern(String pattern) throws IOException, InterruptedException {
+        return deleteByPattern(pattern, null);
+    }
+
+    public DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException, InterruptedException {
         String body = mapper.writeValueAsString(Map.of("pattern", pattern));
-        HttpRequest req = requestBuilder("/keys/delete-by-pattern")
+        HttpRequest req = requestBuilder("/keys/delete-by-pattern", namespace)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .header("Content-Type", "application/json")
                 .build();
@@ -95,10 +112,15 @@ public class DittoHttpClient extends DittoHttpClientBase {
      */
     public DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs)
             throws IOException, InterruptedException {
+        return setTtlByPattern(pattern, ttlSecs, null);
+    }
+
+    public DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
+            throws IOException, InterruptedException {
         String body = ttlSecs > 0
                 ? mapper.writeValueAsString(Map.of("pattern", pattern, "ttl_secs", ttlSecs))
                 : mapper.writeValueAsString(Map.of("pattern", pattern));
-        HttpRequest req = requestBuilder("/keys/ttl-by-pattern")
+        HttpRequest req = requestBuilder("/keys/ttl-by-pattern", namespace)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .header("Content-Type", "application/json")
                 .build();

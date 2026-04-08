@@ -64,7 +64,7 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 
 func (c *HTTPClient) Close() {}
 
-func (c *HTTPClient) request(method, path string, body []byte, contentType string) ([]byte, int, error) {
+func (c *HTTPClient) request(method, path string, body []byte, contentType string, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequest(method, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, err
@@ -74,6 +74,9 @@ func (c *HTTPClient) request(method, path string, body []byte, contentType strin
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -120,7 +123,7 @@ func parseHTTPError(status int, body []byte) error {
 }
 
 func (c *HTTPClient) Ping() (bool, error) {
-	b, status, err := c.request(http.MethodGet, "/ping", nil, "")
+	b, status, err := c.request(http.MethodGet, "/ping", nil, "", nil)
 	if err != nil {
 		return false, err
 	}
@@ -136,8 +139,8 @@ func (c *HTTPClient) Ping() (bool, error) {
 	return p.Pong, nil
 }
 
-func (c *HTTPClient) Get(key string) (*GetResult, error) {
-	b, status, err := c.request(http.MethodGet, "/key/"+url.PathEscape(key), nil, "")
+func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
+	b, status, err := c.request(http.MethodGet, "/key/"+url.PathEscape(key), nil, "", namespaceHeader(namespace...))
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +165,7 @@ func (c *HTTPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResul
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
 	}
-	b, status, err := c.request(http.MethodPut, path, value, "text/plain")
+	b, status, err := c.request(http.MethodPut, path, value, "text/plain", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +185,33 @@ func (c *HTTPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult
 	return c.Set(key, []byte(value), ttlSecs...)
 }
 
-func (c *HTTPClient) Delete(key string) (bool, error) {
-	b, status, err := c.request(http.MethodDelete, "/key/"+url.PathEscape(key), nil, "")
+func (c *HTTPClient) SetInNamespace(key string, value []byte, namespace string, ttlSecs ...uint64) (*SetResult, error) {
+	path := "/key/" + url.PathEscape(key)
+	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
+		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
+	}
+	b, status, err := c.request(http.MethodPut, path, value, "text/plain", namespaceHeader(namespace))
+	if err != nil {
+		return nil, err
+	}
+	if err := parseHTTPError(status, b); err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Version uint64 `json:"version"`
+	}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil, err
+	}
+	return &SetResult{Version: payload.Version}, nil
+}
+
+func (c *HTTPClient) SetStringInNamespace(key, value, namespace string, ttlSecs ...uint64) (*SetResult, error) {
+	return c.SetInNamespace(key, []byte(value), namespace, ttlSecs...)
+}
+
+func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
+	b, status, err := c.request(http.MethodDelete, "/key/"+url.PathEscape(key), nil, "", namespaceHeader(namespace...))
 	if err != nil {
 		return false, err
 	}
@@ -199,9 +227,9 @@ func (c *HTTPClient) Delete(key string) (bool, error) {
 	return true, nil
 }
 
-func (c *HTTPClient) DeleteByPattern(pattern string) (*DeleteByPatternResult, error) {
+func (c *HTTPClient) DeleteByPattern(pattern string, namespace ...string) (*DeleteByPatternResult, error) {
 	payload, _ := json.Marshal(map[string]string{"pattern": pattern})
-	b, status, err := c.request(http.MethodPost, "/keys/delete-by-pattern", payload, "application/json")
+	b, status, err := c.request(http.MethodPost, "/keys/delete-by-pattern", payload, "application/json", namespaceHeader(namespace...))
 	if err != nil {
 		return nil, err
 	}
@@ -215,13 +243,13 @@ func (c *HTTPClient) DeleteByPattern(pattern string) (*DeleteByPatternResult, er
 	return &out, nil
 }
 
-func (c *HTTPClient) SetTtlByPattern(pattern string, ttlSecs uint64) (*SetTtlByPatternResult, error) {
+func (c *HTTPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ...string) (*SetTtlByPatternResult, error) {
 	m := map[string]any{"pattern": pattern}
 	if ttlSecs > 0 {
 		m["ttl_secs"] = ttlSecs
 	}
 	payload, _ := json.Marshal(m)
-	b, status, err := c.request(http.MethodPost, "/keys/ttl-by-pattern", payload, "application/json")
+	b, status, err := c.request(http.MethodPost, "/keys/ttl-by-pattern", payload, "application/json", namespaceHeader(namespace...))
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +264,7 @@ func (c *HTTPClient) SetTtlByPattern(pattern string, ttlSecs uint64) (*SetTtlByP
 }
 
 func (c *HTTPClient) Stats() (*StatsResult, error) {
-	b, status, err := c.request(http.MethodGet, "/stats", nil, "")
+	b, status, err := c.request(http.MethodGet, "/stats", nil, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -248,4 +276,15 @@ func (c *HTTPClient) Stats() (*StatsResult, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+func namespaceHeader(namespace ...string) map[string]string {
+	if len(namespace) == 0 {
+		return nil
+	}
+	ns := namespace[0]
+	if ns == "" {
+		return nil
+	}
+	return map[string]string{"X-Ditto-Namespace": ns}
 }

@@ -54,12 +54,17 @@ def _frame(payload: bytes) -> bytes:
     """Prepend 4-byte big-endian payload-length prefix."""
     return struct.pack(">I", len(payload)) + payload
 
+def _pack_opt_string(s: str | None) -> bytes:
+    if s is None or s.strip() == "":
+        return struct.pack("B", 0)
+    return struct.pack("B", 1) + _pack_string(s)
 
-def encode_get(key: str) -> bytes:
-    return _frame(struct.pack("<I", 0) + _pack_string(key))
+
+def encode_get(key: str, namespace: str | None = None) -> bytes:
+    return _frame(struct.pack("<I", 0) + _pack_string(key) + _pack_opt_string(namespace))
 
 
-def encode_set(key: str, value: bytes, ttl_secs: int = 0) -> bytes:
+def encode_set(key: str, value: bytes, ttl_secs: int = 0, namespace: str | None = None) -> bytes:
     has_ttl = ttl_secs > 0
     payload = (
         struct.pack("<I", 1)
@@ -67,12 +72,13 @@ def encode_set(key: str, value: bytes, ttl_secs: int = 0) -> bytes:
         + _pack_string(value)
         + struct.pack("B", 1 if has_ttl else 0)
         + (struct.pack("<Q", ttl_secs) if has_ttl else b"")
+        + _pack_opt_string(namespace)
     )
     return _frame(payload)
 
 
-def encode_delete(key: str) -> bytes:
-    return _frame(struct.pack("<I", 2) + _pack_string(key))
+def encode_delete(key: str, namespace: str | None = None) -> bytes:
+    return _frame(struct.pack("<I", 2) + _pack_string(key) + _pack_opt_string(namespace))
 
 
 def encode_ping() -> bytes:
@@ -83,17 +89,18 @@ def encode_auth(token: str) -> bytes:
     return _frame(struct.pack("<I", 4) + _pack_string(token))
 
 
-def encode_delete_by_pattern(pattern: str) -> bytes:
-    return _frame(struct.pack("<I", 7) + _pack_string(pattern))
+def encode_delete_by_pattern(pattern: str, namespace: str | None = None) -> bytes:
+    return _frame(struct.pack("<I", 7) + _pack_string(pattern) + _pack_opt_string(namespace))
 
 
-def encode_set_ttl_by_pattern(pattern: str, ttl_secs: int = 0) -> bytes:
+def encode_set_ttl_by_pattern(pattern: str, ttl_secs: int = 0, namespace: str | None = None) -> bytes:
     has_ttl = ttl_secs > 0
     payload = (
         struct.pack("<I", 8)
         + _pack_string(pattern)
         + struct.pack("B", 1 if has_ttl else 0)
         + (struct.pack("<Q", ttl_secs) if has_ttl else b"")
+        + _pack_opt_string(namespace)
     )
     return _frame(payload)
 

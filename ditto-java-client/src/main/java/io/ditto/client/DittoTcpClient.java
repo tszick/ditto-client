@@ -106,7 +106,11 @@ public class DittoTcpClient implements Closeable {
      * Get a key. Returns {@code null} when the key does not exist or has expired.
      */
     public synchronized DittoGetResult get(String key) throws IOException {
-        sendFrame(encodeGet(key));
+        return get(key, null);
+    }
+
+    public synchronized DittoGetResult get(String key, String namespace) throws IOException {
+        sendFrame(encodeGet(key, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
             case VALUE     -> new DittoGetResult(resp.value, resp.version);
@@ -143,7 +147,7 @@ public class DittoTcpClient implements Closeable {
      */
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs)
             throws IOException {
-        sendFrame(encodeSet(key, value, ttlSecs));
+        sendFrame(encodeSet(key, value, ttlSecs, null));
         Response resp = readResponse();
         return switch (resp.type) {
             case OK    -> new DittoSetResult(resp.version);
@@ -156,7 +160,11 @@ public class DittoTcpClient implements Closeable {
      * Delete a key. Returns {@code true} if the key existed, {@code false} if not found.
      */
     public synchronized boolean delete(String key) throws IOException {
-        sendFrame(encodeDelete(key));
+        return delete(key, null);
+    }
+
+    public synchronized boolean delete(String key, String namespace) throws IOException {
+        sendFrame(encodeDelete(key, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
             case DELETED   -> true;
@@ -170,7 +178,11 @@ public class DittoTcpClient implements Closeable {
      * Delete all keys matching a glob-style pattern ('*' wildcard).
      */
     public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern) throws IOException {
-        sendFrame(encodeDeleteByPattern(pattern));
+        return deleteByPattern(pattern, null);
+    }
+
+    public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException {
+        sendFrame(encodeDeleteByPattern(pattern, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
             case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
@@ -185,7 +197,12 @@ public class DittoTcpClient implements Closeable {
      */
     public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs)
             throws IOException {
-        sendFrame(encodeSetTtlByPattern(pattern, ttlSecs));
+        return setTtlByPattern(pattern, ttlSecs, null);
+    }
+
+    public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
+            throws IOException {
+        sendFrame(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
             case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
@@ -197,20 +214,25 @@ public class DittoTcpClient implements Closeable {
     // ── Bincode encoding ──────────────────────────────────────────────────────
 
     /** Variant 0: Get { key } */
-    private byte[] encodeGet(String key) {
+    private byte[] encodeGet(String key, String namespace) {
         byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length).order(ByteOrder.LITTLE_ENDIAN);
+        byte[]     ns  = namespaceBytes(namespace);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(0);
         buf.putLong(kb.length);
         buf.put(kb);
+        putOptionalString(buf, ns);
         return frame(buf.array());
     }
 
     /** Variant 1: Set { key, value, ttl_secs } */
-    private byte[] encodeSet(String key, byte[] value, long ttlSecs) {
+    private byte[] encodeSet(String key, byte[] value, long ttlSecs, String namespace) {
         byte[]     kb     = key.getBytes(StandardCharsets.UTF_8);
+        byte[]     ns     = namespaceBytes(namespace);
         boolean    hasTtl = ttlSecs > 0;
-        int        size   = 4 + 8 + kb.length + 8 + value.length + 1 + (hasTtl ? 8 : 0);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        int        size   = 4 + 8 + kb.length + 8 + value.length + 1 + (hasTtl ? 8 : 0) + nsSize;
         ByteBuffer buf    = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(1);
         buf.putLong(kb.length);
@@ -219,16 +241,20 @@ public class DittoTcpClient implements Closeable {
         buf.put(value);
         buf.put(hasTtl ? (byte) 1 : (byte) 0);
         if (hasTtl) buf.putLong(ttlSecs);
+        putOptionalString(buf, ns);
         return frame(buf.array());
     }
 
     /** Variant 2: Delete { key } */
-    private byte[] encodeDelete(String key) {
+    private byte[] encodeDelete(String key, String namespace) {
         byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length).order(ByteOrder.LITTLE_ENDIAN);
+        byte[]     ns  = namespaceBytes(namespace);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(2);
         buf.putLong(kb.length);
         buf.put(kb);
+        putOptionalString(buf, ns);
         return frame(buf.array());
     }
 
@@ -250,27 +276,48 @@ public class DittoTcpClient implements Closeable {
     }
 
     /** Variant 7: DeleteByPattern { pattern } */
-    private byte[] encodeDeleteByPattern(String pattern) {
+    private byte[] encodeDeleteByPattern(String pattern, String namespace) {
         byte[]     pb  = pattern.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + pb.length).order(ByteOrder.LITTLE_ENDIAN);
+        byte[]     ns  = namespaceBytes(namespace);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + pb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(7);
         buf.putLong(pb.length);
         buf.put(pb);
+        putOptionalString(buf, ns);
         return frame(buf.array());
     }
 
     /** Variant 8: SetTtlByPattern { pattern, ttl_secs } */
-    private byte[] encodeSetTtlByPattern(String pattern, long ttlSecs) {
+    private byte[] encodeSetTtlByPattern(String pattern, long ttlSecs, String namespace) {
         byte[]  pb     = pattern.getBytes(StandardCharsets.UTF_8);
+        byte[]  ns     = namespaceBytes(namespace);
         boolean hasTtl = ttlSecs > 0;
-        int     size   = 4 + 8 + pb.length + 1 + (hasTtl ? 8 : 0);
+        int     nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        int     size   = 4 + 8 + pb.length + 1 + (hasTtl ? 8 : 0) + nsSize;
         ByteBuffer buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(8);
         buf.putLong(pb.length);
         buf.put(pb);
         buf.put(hasTtl ? (byte) 1 : (byte) 0);
         if (hasTtl) buf.putLong(ttlSecs);
+        putOptionalString(buf, ns);
         return frame(buf.array());
+    }
+
+    private static byte[] namespaceBytes(String namespace) {
+        if (namespace == null || namespace.isBlank()) return null;
+        return namespace.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void putOptionalString(ByteBuffer buf, byte[] value) {
+        if (value == null) {
+            buf.put((byte) 0);
+            return;
+        }
+        buf.put((byte) 1);
+        buf.putLong(value.length);
+        buf.put(value);
     }
 
     /** Prepend a 4-byte big-endian length prefix to the payload. */

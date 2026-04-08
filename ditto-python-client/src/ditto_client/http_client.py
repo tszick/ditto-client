@@ -19,6 +19,12 @@ from .types import (
 class DittoHttpClient(DittoHttpClientBase):
     """HTTP client for the Ditto cache server (port 7778)."""
 
+    @staticmethod
+    def _namespace_headers(namespace: str | None) -> dict[str, str] | None:
+        if namespace is None or namespace.strip() == "":
+            return None
+        return {"X-Ditto-Namespace": namespace}
+
     # ── Generated endpoint methods (from api/ditto-http-api.yaml) ──────────
 
     def ping(self) -> bool:
@@ -29,29 +35,41 @@ class DittoHttpClient(DittoHttpClientBase):
         data = json.loads(body)
         return data.get('pong') is True
 
-    def get(self, key: str) -> DittoGetResult | None:
+    def get(self, key: str, namespace: str | None = None) -> DittoGetResult | None:
         """Get a value by key. Returns null when the key does not exist or has expired."""
-        status, body = self._request(f'/key/{self._url_encode(key)}')
+        status, body = self._request(
+            f'/key/{self._url_encode(key)}',
+            extra_headers=self._namespace_headers(namespace),
+        )
         if status == 404:
             return None
         self._assert_ok(status, body)
         data = json.loads(body)
         return DittoGetResult(value=data['value'].encode('utf-8'), version=data['version'])
 
-    def set(self, key: str, value: str, ttl_secs: int = 0) -> DittoSetResult:
+    def set(self, key: str, value: str, ttl_secs: int = 0, namespace: str | None = None) -> DittoSetResult:
         """Set a value. ttlSecs = 0 or omitted means no expiry."""
         path = f'/key/{self._url_encode(key)}'
         if ttl_secs > 0:
             path += f'?ttl={ttl_secs}'
-        status, body = self._request(path, method='PUT', body=value.encode('utf-8'),
-                                     content_type='text/plain')
+        status, body = self._request(
+            path,
+            method='PUT',
+            body=value.encode('utf-8'),
+            content_type='text/plain',
+            extra_headers=self._namespace_headers(namespace),
+        )
         self._assert_ok(status, body)
         data = json.loads(body)
         return DittoSetResult(version=data['version'])
 
-    def delete(self, key: str) -> bool:
+    def delete(self, key: str, namespace: str | None = None) -> bool:
         """Delete a key. Returns true if the key existed, false if not found."""
-        status, body = self._request(f'/key/{self._url_encode(key)}', method='DELETE')
+        status, body = self._request(
+            f'/key/{self._url_encode(key)}',
+            method='DELETE',
+            extra_headers=self._namespace_headers(namespace),
+        )
         if status == 404:
             return False
         if status == 204:
@@ -59,7 +77,7 @@ class DittoHttpClient(DittoHttpClientBase):
         self._assert_ok(status, body)
         return True
 
-    def delete_by_pattern(self, pattern: str) -> DittoDeleteByPatternResult:
+    def delete_by_pattern(self, pattern: str, namespace: str | None = None) -> DittoDeleteByPatternResult:
         """Delete all keys matching a glob-style pattern ('*' wildcard)."""
         payload = json.dumps({"pattern": pattern}).encode("utf-8")
         status, body = self._request(
@@ -67,12 +85,18 @@ class DittoHttpClient(DittoHttpClientBase):
             method="POST",
             body=payload,
             content_type="application/json",
+            extra_headers=self._namespace_headers(namespace),
         )
         self._assert_ok(status, body)
         data = json.loads(body)
         return DittoDeleteByPatternResult(deleted=data["deleted"])
 
-    def set_ttl_by_pattern(self, pattern: str, ttl_secs: int = 0) -> DittoSetTtlByPatternResult:
+    def set_ttl_by_pattern(
+        self,
+        pattern: str,
+        ttl_secs: int = 0,
+        namespace: str | None = None,
+    ) -> DittoSetTtlByPatternResult:
         """
         Update TTL for all keys matching a glob-style pattern ('*' wildcard).
         ``ttl_secs <= 0`` removes TTL from matched keys.
@@ -86,6 +110,7 @@ class DittoHttpClient(DittoHttpClientBase):
             method="POST",
             body=payload,
             content_type="application/json",
+            extra_headers=self._namespace_headers(namespace),
         )
         self._assert_ok(status, body)
         data = json.loads(body)

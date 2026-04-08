@@ -15,6 +15,10 @@ import type {
 } from './types.js';
 
 export class DittoHttpClient extends DittoHttpClientBase {
+  private namespaceHeaders(namespace?: string): Record<string, string> | undefined {
+    if (!namespace || namespace.trim() === '') return undefined;
+    return { 'X-Ditto-Namespace': namespace };
+  }
 
   // ── Generated endpoint methods (from api/ditto-http-api.yaml) ─────────────
 
@@ -27,8 +31,10 @@ export class DittoHttpClient extends DittoHttpClientBase {
   }
 
   /** Get a value by key. Returns null when the key does not exist or has expired. */
-  async get(key: string): Promise<DittoGetResult | null> {
-    const resp = await this.request(`/key/${encodeURIComponent(key)}`);
+  async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
+    const resp = await this.request(`/key/${encodeURIComponent(key)}`, {
+      headers: this.namespaceHeaders(namespace),
+    });
     if (resp.status === 404) return null;
     await this.assertOk(resp);
     const body = await resp.json() as { value: string; version: number };
@@ -36,13 +42,16 @@ export class DittoHttpClient extends DittoHttpClientBase {
   }
 
   /** Set a value. ttlSecs = 0 or omitted means no expiry. */
-  async set(key: string, value: string, ttlSecs?: number): Promise<DittoSetResult> {
+  async set(key: string, value: string, ttlSecs?: number, namespace?: string): Promise<DittoSetResult> {
     const url  = ttlSecs && ttlSecs > 0
       ? `/key/${encodeURIComponent(key)}?ttl=${ttlSecs}`
       : `/key/${encodeURIComponent(key)}`;
     const resp = await this.request(url, {
       method:  'PUT',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: {
+        'Content-Type': 'text/plain',
+        ...(this.namespaceHeaders(namespace) ?? {}),
+      },
       body:    value,
     });
     await this.assertOk(resp);
@@ -51,18 +60,24 @@ export class DittoHttpClient extends DittoHttpClientBase {
   }
 
   /** Delete a key. Returns true if the key existed, false if not found. */
-  async delete(key: string): Promise<boolean> {
-    const resp = await this.request(`/key/${encodeURIComponent(key)}`, { method: 'DELETE' });
+  async delete(key: string, namespace?: string): Promise<boolean> {
+    const resp = await this.request(`/key/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+      headers: this.namespaceHeaders(namespace),
+    });
     if (resp.status === 404 || resp.status === 204) return resp.status === 204;
     await this.assertOk(resp);
     return true;
   }
 
   /** Delete all keys matching a glob-style pattern ('*' wildcard). */
-  async deleteByPattern(pattern: string): Promise<DittoDeleteByPatternResult> {
+  async deleteByPattern(pattern: string, namespace?: string): Promise<DittoDeleteByPatternResult> {
     const resp = await this.request('/keys/delete-by-pattern', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.namespaceHeaders(namespace) ?? {}),
+      },
       body: JSON.stringify({ pattern }),
     });
     await this.assertOk(resp);
@@ -74,14 +89,17 @@ export class DittoHttpClient extends DittoHttpClientBase {
    * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
    * ttlSecs <= 0 or omitted removes TTL from matched keys.
    */
-  async setTtlByPattern(pattern: string, ttlSecs?: number): Promise<DittoSetTtlByPatternResult> {
+  async setTtlByPattern(pattern: string, ttlSecs?: number, namespace?: string): Promise<DittoSetTtlByPatternResult> {
     const payload: { pattern: string; ttl_secs?: number } = { pattern };
     if (ttlSecs !== undefined && ttlSecs > 0) {
       payload.ttl_secs = ttlSecs;
     }
     const resp = await this.request('/keys/ttl-by-pattern', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.namespaceHeaders(namespace) ?? {}),
+      },
       body: JSON.stringify(payload),
     });
     await this.assertOk(resp);

@@ -19,22 +19,23 @@ import type { DittoErrorCode } from './types.js';
 // ---------------------------------------------------------------------------
 
 /** Get { key, namespace } – variant 0 */
-export function encodeGet(key: string): Buffer {
+export function encodeGet(key: string, namespace?: string): Buffer {
   const keyBuf = Buffer.from(key, 'utf8');
-  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + 1);  // +1: namespace = None
+  const nsSize = optionStringSize(namespace);
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + nsSize);
   let   off    = 0;
   buf.writeUInt32LE(0, off);           off += 4;  // variant: Get
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  buf.writeUInt8(0, off);                          // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
 /** Set { key, value, ttl_secs, namespace } – variant 1 */
-export function encodeSet(key: string, value: Buffer, ttlSecs?: number): Buffer {
+export function encodeSet(key: string, value: Buffer, ttlSecs?: number, namespace?: string): Buffer {
   const keyBuf = Buffer.from(key, 'utf8');
   const hasTtl = ttlSecs !== undefined && ttlSecs > 0;
-  const size   = 4 + 8 + keyBuf.length + 8 + value.length + 1 + (hasTtl ? 8 : 0) + 1;  // +1: namespace = None
+  const size   = 4 + 8 + keyBuf.length + 8 + value.length + 1 + (hasTtl ? 8 : 0) + optionStringSize(namespace);
   const buf    = Buffer.allocUnsafe(size);
   let   off    = 0;
 
@@ -47,19 +48,20 @@ export function encodeSet(key: string, value: Buffer, ttlSecs?: number): Buffer 
   if (hasTtl) {
     writeu64LE(buf, ttlSecs!, off);    off += 8;
   }
-  buf.writeUInt8(0, off);                          // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
 /** Delete { key, namespace } – variant 2 */
-export function encodeDelete(key: string): Buffer {
+export function encodeDelete(key: string, namespace?: string): Buffer {
   const keyBuf = Buffer.from(key, 'utf8');
-  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + 1);  // +1: namespace = None
+  const nsSize = optionStringSize(namespace);
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + nsSize);
   let   off    = 0;
   buf.writeUInt32LE(2, off);           off += 4;  // variant: Delete
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  buf.writeUInt8(0, off);                          // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -71,46 +73,49 @@ export function encodePing(): Buffer {
 }
 
 /** Watch { key, namespace } – variant 5 (DITTO-02) */
-export function encodeWatch(key: string): Buffer {
+export function encodeWatch(key: string, namespace?: string): Buffer {
   const keyBuf = Buffer.from(key, 'utf8');
-  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + 1);  // +1: namespace = None
+  const nsSize = optionStringSize(namespace);
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + nsSize);
   let   off    = 0;
   buf.writeUInt32LE(5, off);           off += 4;  // variant: Watch
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  buf.writeUInt8(0, off);                          // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
 /** Unwatch { key, namespace } – variant 6 (DITTO-02) */
-export function encodeUnwatch(key: string): Buffer {
+export function encodeUnwatch(key: string, namespace?: string): Buffer {
   const keyBuf = Buffer.from(key, 'utf8');
-  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + 1);  // +1: namespace = None
+  const nsSize = optionStringSize(namespace);
+  const buf    = Buffer.allocUnsafe(4 + 8 + keyBuf.length + nsSize);
   let   off    = 0;
   buf.writeUInt32LE(6, off);           off += 4;  // variant: Unwatch
   writeu64LE(buf, keyBuf.length, off); off += 8;
   keyBuf.copy(buf, off);               off += keyBuf.length;
-  buf.writeUInt8(0, off);                          // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
 /** DeleteByPattern { pattern, namespace } – variant 7 */
-export function encodeDeleteByPattern(pattern: string): Buffer {
+export function encodeDeleteByPattern(pattern: string, namespace?: string): Buffer {
   const patternBuf = Buffer.from(pattern, 'utf8');
-  const buf        = Buffer.allocUnsafe(4 + 8 + patternBuf.length + 1);  // +1: namespace = None
+  const nsSize     = optionStringSize(namespace);
+  const buf        = Buffer.allocUnsafe(4 + 8 + patternBuf.length + nsSize);
   let   off        = 0;
   buf.writeUInt32LE(7, off);               off += 4;  // variant: DeleteByPattern
   writeu64LE(buf, patternBuf.length, off); off += 8;
   patternBuf.copy(buf, off);               off += patternBuf.length;
-  buf.writeUInt8(0, off);                              // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
 /** SetTtlByPattern { pattern, ttl_secs, namespace } – variant 8 */
-export function encodeSetTtlByPattern(pattern: string, ttlSecs?: number): Buffer {
+export function encodeSetTtlByPattern(pattern: string, ttlSecs?: number, namespace?: string): Buffer {
   const patternBuf = Buffer.from(pattern, 'utf8');
   const hasTtl     = ttlSecs !== undefined && ttlSecs > 0;
-  const size       = 4 + 8 + patternBuf.length + 1 + (hasTtl ? 8 : 0) + 1;  // +1: namespace = None
+  const size       = 4 + 8 + patternBuf.length + 1 + (hasTtl ? 8 : 0) + optionStringSize(namespace);
   const buf        = Buffer.allocUnsafe(size);
   let   off        = 0;
   buf.writeUInt32LE(8, off);               off += 4;  // variant: SetTtlByPattern
@@ -120,7 +125,7 @@ export function encodeSetTtlByPattern(pattern: string, ttlSecs?: number): Buffer
   if (hasTtl) {
     writeu64LE(buf, ttlSecs!, off);        off += 8;
   }
-  buf.writeUInt8(0, off);                              // namespace: Option<String> = None
+  off = writeOptionString(buf, off, namespace);
   return frame(buf);
 }
 
@@ -243,4 +248,23 @@ function writeu64LE(buf: Buffer, value: number, offset: number): void {
 /** Read a u64 LE as a number (safe for lengths up to Number.MAX_SAFE_INTEGER). */
 function readu64LE(buf: Buffer, offset: number): number {
   return Number(buf.readBigUInt64LE(offset));
+}
+
+function optionStringSize(namespace?: string): number {
+  if (namespace === undefined || namespace === null || namespace.trim() === '') return 1;
+  return 1 + 8 + Buffer.byteLength(namespace, 'utf8');
+}
+
+function writeOptionString(buf: Buffer, offset: number, namespace?: string): number {
+  if (namespace === undefined || namespace === null || namespace.trim() === '') {
+    buf.writeUInt8(0, offset);
+    return offset + 1;
+  }
+  const nsBuf = Buffer.from(namespace, 'utf8');
+  buf.writeUInt8(1, offset);
+  offset += 1;
+  writeu64LE(buf, nsBuf.length, offset);
+  offset += 8;
+  nsBuf.copy(buf, offset);
+  return offset + nsBuf.length;
 }

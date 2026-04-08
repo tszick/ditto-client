@@ -109,6 +109,15 @@ public abstract class DittoHttpClientBase {
         return b;
     }
 
+    /** Build request with optional Ditto namespace header. */
+    protected HttpRequest.Builder requestBuilder(String path, String namespace) {
+        HttpRequest.Builder b = requestBuilder(path);
+        if (namespace != null && !namespace.isBlank()) {
+            b.header("X-Ditto-Namespace", namespace);
+        }
+        return b;
+    }
+
     /** Send {@code req} and return the response body as a String. */
     protected HttpResponse<String> send(HttpRequest req) throws IOException, InterruptedException {
         return httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

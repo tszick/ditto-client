@@ -74,6 +74,7 @@ class DittoHttpClientBase:
         method: str = "GET",
         body: bytes | None = None,
         content_type: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> tuple[int, str]:
         """
         Send an HTTP request.  Returns ``(status_code, response_body_text)``.
@@ -84,6 +85,8 @@ class DittoHttpClientBase:
             headers["Authorization"] = self._auth_header
         if content_type:
             headers["Content-Type"] = content_type
+        if extra_headers:
+            headers.update(extra_headers)
 
         req = urllib.request.Request(
             url,

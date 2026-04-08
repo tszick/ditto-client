@@ -179,8 +179,8 @@ export class DittoTcpClient {
    * Get a key. Returns `null` when the key does not exist or has expired.
    * The returned `value` is a raw Buffer (the stored bytes, unchanged).
    */
-  async get(key: string): Promise<DittoGetResult | null> {
-    const resp = await this.send(encodeGet(key));
+  async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
+    const resp = await this.send(encodeGet(key, namespace));
     if (resp.type === 'NotFound') return null;
     if (resp.type === 'Value')    return { value: resp.value, version: resp.version };
     if (resp.type === 'Error')    throw new DittoError(resp.code, resp.message);
@@ -195,9 +195,10 @@ export class DittoTcpClient {
     key:     string,
     value:   string | Buffer,
     ttlSecs?: number,
+    namespace?: string,
   ): Promise<DittoSetResult> {
     const valueBuf = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
-    const resp     = await this.send(encodeSet(key, valueBuf, ttlSecs));
+    const resp     = await this.send(encodeSet(key, valueBuf, ttlSecs, namespace));
     if (resp.type === 'Ok')    return { version: resp.version };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     throw new Error(`Unexpected response: ${resp.type}`);
@@ -206,8 +207,8 @@ export class DittoTcpClient {
   /**
    * Delete a key. Returns `true` if the key existed, `false` if not found.
    */
-  async delete(key: string): Promise<boolean> {
-    const resp = await this.send(encodeDelete(key));
+  async delete(key: string, namespace?: string): Promise<boolean> {
+    const resp = await this.send(encodeDelete(key, namespace));
     if (resp.type === 'Deleted')  return true;
     if (resp.type === 'NotFound') return false;
     if (resp.type === 'Error')    throw new DittoError(resp.code, resp.message);
@@ -218,8 +219,8 @@ export class DittoTcpClient {
    * Delete all keys matching a glob-style pattern ('*' wildcard).
    * Returns the number of deleted keys.
    */
-  async deleteByPattern(pattern: string): Promise<DittoDeleteByPatternResult> {
-    const resp = await this.send(encodeDeleteByPattern(pattern));
+  async deleteByPattern(pattern: string, namespace?: string): Promise<DittoDeleteByPatternResult> {
+    const resp = await this.send(encodeDeleteByPattern(pattern, namespace));
     if (resp.type === 'PatternDeleted') return { deleted: resp.deleted };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     throw new Error(`Unexpected response: ${resp.type}`);
@@ -229,8 +230,8 @@ export class DittoTcpClient {
    * Update TTL for all keys matching a glob-style pattern ('*' wildcard).
    * ttlSecs <= 0 or omitted removes TTL from matched keys.
    */
-  async setTtlByPattern(pattern: string, ttlSecs?: number): Promise<DittoSetTtlByPatternResult> {
-    const resp = await this.send(encodeSetTtlByPattern(pattern, ttlSecs));
+  async setTtlByPattern(pattern: string, ttlSecs?: number, namespace?: string): Promise<DittoSetTtlByPatternResult> {
+    const resp = await this.send(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
     if (resp.type === 'PatternTtlUpdated') return { updated: resp.updated };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     throw new Error(`Unexpected response: ${resp.type}`);
@@ -246,9 +247,9 @@ export class DittoTcpClient {
    * The subscription is active until `unwatch(key)` is called or the client
    * is closed. After an auto-reconnect the subscription is re-registered.
    */
-  async watch(key: string, callback: (value: Buffer | null, version: number) => void): Promise<void> {
+  async watch(key: string, callback: (value: Buffer | null, version: number) => void, namespace?: string): Promise<void> {
     this.watchCallbacks.set(key, callback);
-    const resp = await this.send(encodeWatch(key));
+    const resp = await this.send(encodeWatch(key, namespace));
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     if (resp.type !== 'Watching') throw new Error(`Unexpected response to Watch: ${resp.type}`);
   }
@@ -256,10 +257,10 @@ export class DittoTcpClient {
   /**
    * Cancel the subscription for `key`. No-op if the key is not being watched.
    */
-  async unwatch(key: string): Promise<void> {
+  async unwatch(key: string, namespace?: string): Promise<void> {
     this.watchCallbacks.delete(key);
     if (!this.socket) return; // already disconnected — nothing to send
-    const resp = await this.send(encodeUnwatch(key));
+    const resp = await this.send(encodeUnwatch(key, namespace));
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     if (resp.type !== 'Unwatched') throw new Error(`Unexpected response to Unwatch: ${resp.type}`);
   }

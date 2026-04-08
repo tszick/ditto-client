@@ -27,6 +27,7 @@ Shared behavior target:
 | `ping/get/set/delete` | yes | yes | yes |
 | `deleteByPattern` / `delete_by_pattern` | yes | yes | yes |
 | `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes |
+| Namespace-aware operations | yes | yes | yes |
 | Key watch/unwatch (TCP) | yes | no | no |
 | Auto reconnect (TCP) | yes | no | no |
 
@@ -50,6 +51,13 @@ Shared behavior target:
 
 - Delete all keys matching glob-style pattern (`*` wildcard).
 - Update TTL for all matched keys.
+
+### Namespace semantics
+
+- All SDKs support namespace-scoped cache operations.
+- HTTP clients send namespace with `X-Ditto-Namespace` header.
+- TCP clients encode namespace via protocol `Option<String>` field on request variants.
+- Omitted/empty namespace falls back to server-side default namespace behavior.
 
 Examples of patterns:
 - `user:*`

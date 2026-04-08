@@ -122,12 +122,12 @@ class DittoTcpClient:
         resp = self._send(encode_ping())
         return resp.type == "Pong"
 
-    def get(self, key: str) -> DittoGetResult | None:
+    def get(self, key: str, namespace: str | None = None) -> DittoGetResult | None:
         """
         Get a key.  Returns None when the key does not exist or has expired.
         The returned ``value`` is the raw bytes stored for the key.
         """
-        resp = self._send(encode_get(key))
+        resp = self._send(encode_get(key, namespace))
         if resp.type == "NotFound":
             return None
         if resp.type == "Value":
@@ -141,22 +141,23 @@ class DittoTcpClient:
         key: str,
         value: str | bytes,
         ttl_secs: int = 0,
+        namespace: str | None = None,
     ) -> DittoSetResult:
         """
         Set a key.  ``value`` may be a str (UTF-8 encoded) or bytes.
         ``ttl_secs=0`` means no expiry.
         """
         raw = value.encode("utf-8") if isinstance(value, str) else value
-        resp = self._send(encode_set(key, raw, ttl_secs))
+        resp = self._send(encode_set(key, raw, ttl_secs, namespace))
         if resp.type == "Ok":
             return DittoSetResult(version=resp.version)  # type: ignore[union-attr]
         if resp.type == "Error":
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")
 
-    def delete(self, key: str) -> bool:
+    def delete(self, key: str, namespace: str | None = None) -> bool:
         """Delete a key. Returns True if the key existed, False if not found."""
-        resp = self._send(encode_delete(key))
+        resp = self._send(encode_delete(key, namespace))
         if resp.type == "Deleted":
             return True
         if resp.type == "NotFound":
@@ -165,21 +166,26 @@ class DittoTcpClient:
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")
 
-    def delete_by_pattern(self, pattern: str) -> DittoDeleteByPatternResult:
+    def delete_by_pattern(self, pattern: str, namespace: str | None = None) -> DittoDeleteByPatternResult:
         """Delete all keys matching a glob-style pattern ('*' wildcard)."""
-        resp = self._send(encode_delete_by_pattern(pattern))
+        resp = self._send(encode_delete_by_pattern(pattern, namespace))
         if resp.type == "PatternDeleted":
             return DittoDeleteByPatternResult(deleted=resp.deleted)  # type: ignore[union-attr]
         if resp.type == "Error":
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")
 
-    def set_ttl_by_pattern(self, pattern: str, ttl_secs: int = 0) -> DittoSetTtlByPatternResult:
+    def set_ttl_by_pattern(
+        self,
+        pattern: str,
+        ttl_secs: int = 0,
+        namespace: str | None = None,
+    ) -> DittoSetTtlByPatternResult:
         """
         Update TTL for all keys matching a glob-style pattern ('*' wildcard).
         ``ttl_secs <= 0`` removes TTL from matched keys.
         """
-        resp = self._send(encode_set_ttl_by_pattern(pattern, ttl_secs))
+        resp = self._send(encode_set_ttl_by_pattern(pattern, ttl_secs, namespace))
         if resp.type == "PatternTtlUpdated":
             return DittoSetTtlByPatternResult(updated=resp.updated)  # type: ignore[union-attr]
         if resp.type == "Error":

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,13 +161,13 @@ func (c *TCPClient) Ping() (bool, error) {
 	return resp.kind == respPong, nil
 }
 
-func (c *TCPClient) Get(key string) (*GetResult, error) {
+func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendLocked(encodeGet(key))
+	resp, err := c.sendLocked(encodeGet(key, normalizeNamespace(namespace...)))
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +193,7 @@ func (c *TCPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		ttl = &ttlSecs[0]
 	}
-	resp, err := c.sendLocked(encodeSet(key, value, ttl))
+	resp, err := c.sendLocked(encodeSet(key, value, ttl, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -210,13 +211,41 @@ func (c *TCPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult,
 	return c.Set(key, []byte(value), ttlSecs...)
 }
 
-func (c *TCPClient) Delete(key string) (bool, error) {
+func (c *TCPClient) SetInNamespace(key string, value []byte, namespace string, ttlSecs ...uint64) (*SetResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return nil, err
+	}
+	var ttl *uint64
+	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
+		ttl = &ttlSecs[0]
+	}
+	resp, err := c.sendLocked(encodeSet(key, value, ttl, normalizeNamespace(namespace)))
+	if err != nil {
+		return nil, err
+	}
+	switch resp.kind {
+	case respOK:
+		return &SetResult{Version: resp.version}, nil
+	case respError:
+		return nil, &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return nil, fmt.Errorf("unexpected response")
+	}
+}
+
+func (c *TCPClient) SetStringInNamespace(key, value, namespace string, ttlSecs ...uint64) (*SetResult, error) {
+	return c.SetInNamespace(key, []byte(value), namespace, ttlSecs...)
+}
+
+func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.ensureConnectedLocked(); err != nil {
 		return false, err
 	}
-	resp, err := c.sendLocked(encodeDelete(key))
+	resp, err := c.sendLocked(encodeDelete(key, normalizeNamespace(namespace...)))
 	if err != nil {
 		return false, err
 	}
@@ -232,13 +261,13 @@ func (c *TCPClient) Delete(key string) (bool, error) {
 	}
 }
 
-func (c *TCPClient) DeleteByPattern(pattern string) (*DeleteByPatternResult, error) {
+func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*DeleteByPatternResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendLocked(encodeDeleteByPattern(pattern))
+	resp, err := c.sendLocked(encodeDeleteByPattern(pattern, normalizeNamespace(namespace...)))
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +281,7 @@ func (c *TCPClient) DeleteByPattern(pattern string) (*DeleteByPatternResult, err
 	}
 }
 
-func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64) (*SetTtlByPatternResult, error) {
+func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ...string) (*SetTtlByPatternResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.ensureConnectedLocked(); err != nil {
@@ -262,7 +291,7 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64) (*SetTtlByPa
 	if ttlSecs > 0 {
 		ttl = &ttlSecs
 	}
-	resp, err := c.sendLocked(encodeSetTTLByPattern(pattern, ttl))
+	resp, err := c.sendLocked(encodeSetTTLByPattern(pattern, ttl, normalizeNamespace(namespace...)))
 	if err != nil {
 		return nil, err
 	}
@@ -274,4 +303,15 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64) (*SetTtlByPa
 	default:
 		return nil, fmt.Errorf("unexpected response")
 	}
+}
+
+func normalizeNamespace(namespace ...string) *string {
+	if len(namespace) == 0 {
+		return nil
+	}
+	ns := strings.TrimSpace(namespace[0])
+	if ns == "" {
+		return nil
+	}
+	return &ns
 }
