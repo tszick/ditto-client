@@ -17,7 +17,7 @@ repositories {
 
 dependencies {
     // Used internally for HTTP JSON parsing — not exposed in the public API.
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.21.2")
 }
 
 // Produce a plain JAR without a version suffix so consumers can reference it
