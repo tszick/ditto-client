@@ -62,6 +62,7 @@ class DittoTcpClient:
         socket_timeout_secs: float = 10.0,
         max_frame_bytes: int = 8 * 1024 * 1024,
         strict_mode: bool = False,
+        auto_reconnect: bool = False,
     ) -> None:
         self._host = host
         self._port = port
@@ -70,6 +71,7 @@ class DittoTcpClient:
         self._socket_timeout_secs = socket_timeout_secs
         self._max_frame_bytes = max_frame_bytes
         self._strict_mode = strict_mode
+        self._auto_reconnect = auto_reconnect
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
 
@@ -90,34 +92,13 @@ class DittoTcpClient:
 
     def connect(self) -> None:
         """Open the TCP connection. Must be called before any other method."""
-        if self._sock is not None:
-            return
-        sock = socket.create_connection((self._host, self._port), timeout=self._connect_timeout_secs)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.settimeout(self._socket_timeout_secs)
-        self._sock = sock
-
-        if self._auth_token is not None:
-            from .bincode import encode_auth
-            resp = self._send(encode_auth(self._auth_token))
-            if getattr(resp, "type", None) == "Error":
-                self.close()
-                raise DittoError(getattr(resp, "code", "Error"), getattr(resp, "message", str(resp)))
-            if getattr(resp, "type", None) != "AuthOk":
-                self.close()
-                raise RuntimeError(f"Unexpected auth response: {getattr(resp, 'type', type(resp))}")
+        with self._lock:
+            self._connect_locked()
 
     def close(self) -> None:
         """Gracefully close the TCP connection."""
         with self._lock:
-            if self._sock is None:
-                return
-            try:
-                self._sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass  # Socket may already be closed; ignore shutdown errors
-            self._sock.close()
-            self._sock = None
+            self._close_locked()
 
     # ------------------------------------------------------------------
     # Public API
@@ -241,8 +222,17 @@ class DittoTcpClient:
         with self._lock:
             if self._sock is None:
                 raise RuntimeError("Not connected. Call connect() first.")
-            self._sock.sendall(frame)
-            return self._recv()
+            try:
+                self._sock.sendall(frame)
+                return self._recv()
+            except (OSError, ConnectionError):
+                self._close_locked()
+                if not self._auto_reconnect:
+                    raise
+                self._connect_locked()
+                assert self._sock is not None
+                self._sock.sendall(frame)
+                return self._recv()
 
     def _recv(self) -> ClientResponse:
         """Read exactly one framed response from the socket."""
@@ -266,3 +256,32 @@ class DittoTcpClient:
                 raise ConnectionError("Connection closed by server.")
             data.extend(chunk)
         return bytes(data)
+
+    def _close_locked(self) -> None:
+        if self._sock is None:
+            return
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self._sock.close()
+        self._sock = None
+
+    def _connect_locked(self) -> None:
+        if self._sock is not None:
+            return
+        sock = socket.create_connection((self._host, self._port), timeout=self._connect_timeout_secs)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.settimeout(self._socket_timeout_secs)
+        self._sock = sock
+
+        if self._auth_token is not None:
+            from .bincode import encode_auth
+            self._sock.sendall(encode_auth(self._auth_token))
+            resp = self._recv()
+            if getattr(resp, "type", None) == "Error":
+                self._close_locked()
+                raise DittoError(getattr(resp, "code", "Error"), getattr(resp, "message", str(resp)))
+            if getattr(resp, "type", None) != "AuthOk":
+                self._close_locked()
+                raise RuntimeError(f"Unexpected auth response: {getattr(resp, 'type', type(resp))}")

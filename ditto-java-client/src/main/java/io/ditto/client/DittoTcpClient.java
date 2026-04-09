@@ -41,6 +41,7 @@ public class DittoTcpClient implements Closeable {
     private final int    port;
     private final String authToken;
     private final boolean strictMode;
+    private final boolean autoReconnect;
 
     private Socket           socket;
     private DataInputStream  in;
@@ -61,16 +62,24 @@ public class DittoTcpClient implements Closeable {
     }
 
     public DittoTcpClient(String host, int port, String authToken, boolean strictMode) {
+        this(host, port, authToken, strictMode, false);
+    }
+
+    public DittoTcpClient(String host, int port, String authToken, boolean strictMode, boolean autoReconnect) {
         this.host = host;
         this.port = port;
         this.authToken = authToken;
         this.strictMode = strictMode;
+        this.autoReconnect = autoReconnect;
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     /** Open the TCP connection. Must be called before any other method. */
     public synchronized void connect() throws IOException {
+        if (socket != null && !socket.isClosed()) {
+            return;
+        }
         socket = new Socket();
         socket.connect(new java.net.InetSocketAddress(host, port), DEFAULT_CONNECT_TIMEOUT_MS);
         socket.setTcpNoDelay(true);
@@ -95,17 +104,14 @@ public class DittoTcpClient implements Closeable {
     /** Gracefully close the TCP connection. */
     @Override
     public synchronized void close() throws IOException {
-        if (socket != null && !socket.isClosed()) {
-            socket.close();
-        }
+        closeSocketOnly();
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
 
     /** Send a Ping and return {@code true} when Pong is received. */
     public synchronized boolean ping() throws IOException {
-        sendFrame(encodePing());
-        return readResponse().type == ResponseType.PONG;
+        return sendAndRead(encodePing()).type == ResponseType.PONG;
     }
 
     /**
@@ -117,8 +123,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoGetResult get(String key, String namespace) throws IOException {
         validateCoreInputs("get", key, namespace);
-        sendFrame(encodeGet(key, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeGet(key, namespace));
         return switch (resp.type) {
             case VALUE     -> new DittoGetResult(resp.value, resp.version);
             case NOT_FOUND -> null;
@@ -171,8 +176,7 @@ public class DittoTcpClient implements Closeable {
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException {
         validateCoreInputs("set", key, namespace);
-        sendFrame(encodeSet(key, value, ttlSecs, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeSet(key, value, ttlSecs, namespace));
         return switch (resp.type) {
             case OK    -> new DittoSetResult(resp.version);
             case ERROR -> throw new DittoException(resp.errorCode, resp.message);
@@ -189,8 +193,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized boolean delete(String key, String namespace) throws IOException {
         validateCoreInputs("delete", key, namespace);
-        sendFrame(encodeDelete(key, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeDelete(key, namespace));
         return switch (resp.type) {
             case DELETED   -> true;
             case NOT_FOUND -> false;
@@ -207,8 +210,7 @@ public class DittoTcpClient implements Closeable {
     }
 
     public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException {
-        sendFrame(encodeDeleteByPattern(pattern, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeDeleteByPattern(pattern, namespace));
         return switch (resp.type) {
             case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
             case ERROR           -> throw new DittoException(resp.errorCode, resp.message);
@@ -227,8 +229,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
             throws IOException {
-        sendFrame(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
         return switch (resp.type) {
             case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
             case ERROR               -> throw new DittoException(resp.errorCode, resp.message);
@@ -243,8 +244,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void watch(String key, String namespace) throws IOException {
         validateCoreInputs("watch", key, namespace);
-        sendFrame(encodeWatch(key, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeWatch(key, namespace));
         switch (resp.type) {
             case WATCHING -> {
                 return;
@@ -261,8 +261,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void unwatch(String key, String namespace) throws IOException {
         validateCoreInputs("unwatch", key, namespace);
-        sendFrame(encodeUnwatch(key, namespace));
-        Response resp = readResponse();
+        Response resp = sendAndRead(encodeUnwatch(key, namespace));
         switch (resp.type) {
             case UNWATCHED -> {
                 return;
@@ -466,6 +465,35 @@ public class DittoTcpClient implements Closeable {
     private void sendFrame(byte[] data) throws IOException {
         out.write(data);
         out.flush();
+    }
+
+    private Response sendAndRead(byte[] data) throws IOException {
+        try {
+            sendFrame(data);
+            return readResponse();
+        } catch (IOException first) {
+            closeSocketOnly();
+            if (!autoReconnect) {
+                throw first;
+            }
+            connect();
+            sendFrame(data);
+            return readResponse();
+        }
+    }
+
+    private void closeSocketOnly() {
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        } catch (IOException ignored) {
+            // best effort cleanup before reconnect
+        } finally {
+            socket = null;
+            in = null;
+            out = null;
+        }
     }
 
     private Response readResponse() throws IOException {

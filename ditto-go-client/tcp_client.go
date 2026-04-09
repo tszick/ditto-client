@@ -16,6 +16,7 @@ type TCPClientOptions struct {
 	Timeout       time.Duration
 	MaxFrameBytes uint32
 	StrictMode    bool
+	AutoReconnect bool
 }
 
 type TCPClient struct {
@@ -25,6 +26,7 @@ type TCPClient struct {
 	timeout       time.Duration
 	maxFrameBytes uint32
 	strictMode    bool
+	autoReconnect bool
 
 	mu   sync.Mutex
 	conn net.Conn
@@ -48,7 +50,7 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 		maxFrame = 8 * 1024 * 1024
 	}
 	return &TCPClient{
-		host: host, port: port, authToken: opts.AuthToken, timeout: timeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode,
+		host: host, port: port, authToken: opts.AuthToken, timeout: timeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode, autoReconnect: opts.AutoReconnect,
 	}
 }
 
@@ -135,6 +137,28 @@ func (c *TCPClient) sendLocked(frame []byte) (*tcpResponse, error) {
 	return c.readResponseLocked()
 }
 
+func (c *TCPClient) closeConnLocked() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+	}
+}
+
+func (c *TCPClient) sendRequestLocked(frame []byte) (*tcpResponse, error) {
+	resp, err := c.sendLocked(frame)
+	if err == nil {
+		return resp, nil
+	}
+	c.closeConnLocked()
+	if !c.autoReconnect {
+		return nil, err
+	}
+	if connErr := c.ensureConnectedLocked(); connErr != nil {
+		return nil, connErr
+	}
+	return c.sendLocked(frame)
+}
+
 func (c *TCPClient) readResponseLocked() (*tcpResponse, error) {
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(c.conn, head); err != nil {
@@ -157,7 +181,7 @@ func (c *TCPClient) Ping() (bool, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return false, err
 	}
-	resp, err := c.sendLocked(encodePing())
+	resp, err := c.sendRequestLocked(encodePing())
 	if err != nil {
 		return false, err
 	}
@@ -177,7 +201,7 @@ func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	if err := validateCoreInputs(c.strictMode, "get", key, ns); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendLocked(encodeGet(key, ns))
+	resp, err := c.sendRequestLocked(encodeGet(key, ns))
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +230,7 @@ func (c *TCPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		ttl = &ttlSecs[0]
 	}
-	resp, err := c.sendLocked(encodeSet(key, value, ttl, nil))
+	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +265,7 @@ func (c *TCPClient) SetInNamespace(key string, value []byte, namespace string, t
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		ttl = &ttlSecs[0]
 	}
-	resp, err := c.sendLocked(encodeSet(key, value, ttl, ns))
+	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, ns))
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +296,7 @@ func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	if err := validateCoreInputs(c.strictMode, "delete", key, ns); err != nil {
 		return false, err
 	}
-	resp, err := c.sendLocked(encodeDelete(key, ns))
+	resp, err := c.sendRequestLocked(encodeDelete(key, ns))
 	if err != nil {
 		return false, err
 	}
@@ -294,7 +318,7 @@ func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*Delet
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendLocked(encodeDeleteByPattern(pattern, normalizeNamespace(namespace...)))
+	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, normalizeNamespace(namespace...)))
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +342,7 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 	if ttlSecs > 0 {
 		ttl = &ttlSecs
 	}
-	resp, err := c.sendLocked(encodeSetTTLByPattern(pattern, ttl, normalizeNamespace(namespace...)))
+	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, normalizeNamespace(namespace...)))
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +369,7 @@ func (c *TCPClient) Watch(key string, namespace ...string) error {
 	if err := validateCoreInputs(c.strictMode, "watch", key, ns); err != nil {
 		return err
 	}
-	resp, err := c.sendLocked(encodeWatch(key, ns))
+	resp, err := c.sendRequestLocked(encodeWatch(key, ns))
 	if err != nil {
 		return err
 	}
@@ -372,7 +396,7 @@ func (c *TCPClient) Unwatch(key string, namespace ...string) error {
 	if err := validateCoreInputs(c.strictMode, "unwatch", key, ns); err != nil {
 		return err
 	}
-	resp, err := c.sendLocked(encodeUnwatch(key, ns))
+	resp, err := c.sendRequestLocked(encodeUnwatch(key, ns))
 	if err != nil {
 		return err
 	}
