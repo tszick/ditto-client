@@ -28,6 +28,7 @@ from .types import (
     DittoSetResult,
     DittoSetTtlByPatternResult,
 )
+from .validation import validate_core_inputs
 
 
 class DittoTcpClient:
@@ -57,6 +58,7 @@ class DittoTcpClient:
         connect_timeout_secs: float = 10.0,
         socket_timeout_secs: float = 10.0,
         max_frame_bytes: int = 8 * 1024 * 1024,
+        strict_mode: bool = False,
     ) -> None:
         self._host = host
         self._port = port
@@ -64,6 +66,7 @@ class DittoTcpClient:
         self._connect_timeout_secs = connect_timeout_secs
         self._socket_timeout_secs = socket_timeout_secs
         self._max_frame_bytes = max_frame_bytes
+        self._strict_mode = strict_mode
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
 
@@ -127,6 +130,7 @@ class DittoTcpClient:
         Get a key.  Returns None when the key does not exist or has expired.
         The returned ``value`` is the raw bytes stored for the key.
         """
+        validate_core_inputs(self._strict_mode, "get", key, namespace)
         resp = self._send(encode_get(key, namespace))
         if resp.type == "NotFound":
             return None
@@ -147,6 +151,7 @@ class DittoTcpClient:
         Set a key.  ``value`` may be a str (UTF-8 encoded) or bytes.
         ``ttl_secs=0`` means no expiry.
         """
+        validate_core_inputs(self._strict_mode, "set", key, namespace)
         raw = value.encode("utf-8") if isinstance(value, str) else value
         resp = self._send(encode_set(key, raw, ttl_secs, namespace))
         if resp.type == "Ok":
@@ -157,6 +162,7 @@ class DittoTcpClient:
 
     def delete(self, key: str, namespace: str | None = None) -> bool:
         """Delete a key. Returns True if the key existed, False if not found."""
+        validate_core_inputs(self._strict_mode, "delete", key, namespace)
         resp = self._send(encode_delete(key, namespace))
         if resp.type == "Deleted":
             return True

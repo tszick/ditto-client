@@ -33,12 +33,14 @@ class DittoHttpClientBase:
         password: str | None = None,
         reject_unauthorized: bool = True,
         timeout_secs: float = 10.0,
+        strict_mode: bool = False,
     ) -> None:
         scheme = "https" if tls else "http"
         self._base_url = f"{scheme}://{host}:{port}"
         self._auth_header: str | None = None
         self._ssl_ctx: ssl.SSLContext | None = None
         self._timeout_secs = timeout_secs
+        self._strict_mode = strict_mode
 
         if username and password:
             creds = base64.b64encode(f"{username}:{password}".encode()).decode()

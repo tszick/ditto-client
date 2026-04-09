@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -20,12 +21,14 @@ type HTTPClientOptions struct {
 	Password           string
 	RejectUnauthorized bool
 	Timeout            time.Duration
+	StrictMode         bool
 }
 
 type HTTPClient struct {
 	baseURL    string
 	httpClient *http.Client
 	authHeader string
+	strictMode bool
 }
 
 func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
@@ -55,6 +58,7 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 			Timeout:   timeout,
 			Transport: tr,
 		},
+		strictMode: opts.StrictMode,
 	}
 	if opts.Username != "" && opts.Password != "" {
 		c.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(opts.Username+":"+opts.Password))
@@ -140,7 +144,14 @@ func (c *HTTPClient) Ping() (bool, error) {
 }
 
 func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
-	b, status, err := c.request(http.MethodGet, "/key/"+url.PathEscape(key), nil, "", namespaceHeader(namespace...))
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "get", key, ns); err != nil {
+		return nil, err
+	}
+	b, status, err := c.request(http.MethodGet, "/key/"+url.PathEscape(key), nil, "", namespaceHeaderPtr(ns))
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +172,9 @@ func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
 }
 
 func (c *HTTPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult, error) {
+	if err := validateCoreInputs(c.strictMode, "set", key, nil); err != nil {
+		return nil, err
+	}
 	path := "/key/" + url.PathEscape(key)
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
@@ -186,11 +200,15 @@ func (c *HTTPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult
 }
 
 func (c *HTTPClient) SetInNamespace(key string, value []byte, namespace string, ttlSecs ...uint64) (*SetResult, error) {
+	ns := strings.TrimSpace(namespace)
+	if err := validateCoreInputs(c.strictMode, "set", key, &ns); err != nil {
+		return nil, err
+	}
 	path := "/key/" + url.PathEscape(key)
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
 	}
-	b, status, err := c.request(http.MethodPut, path, value, "text/plain", namespaceHeader(namespace))
+	b, status, err := c.request(http.MethodPut, path, value, "text/plain", namespaceHeaderPtr(&ns))
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +229,14 @@ func (c *HTTPClient) SetStringInNamespace(key, value, namespace string, ttlSecs 
 }
 
 func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
-	b, status, err := c.request(http.MethodDelete, "/key/"+url.PathEscape(key), nil, "", namespaceHeader(namespace...))
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return false, err
+	}
+	if err := validateCoreInputs(c.strictMode, "delete", key, ns); err != nil {
+		return false, err
+	}
+	b, status, err := c.request(http.MethodDelete, "/key/"+url.PathEscape(key), nil, "", namespaceHeaderPtr(ns))
 	if err != nil {
 		return false, err
 	}
@@ -287,4 +312,11 @@ func namespaceHeader(namespace ...string) map[string]string {
 		return nil
 	}
 	return map[string]string{"X-Ditto-Namespace": ns}
+}
+
+func namespaceHeaderPtr(namespace *string) map[string]string {
+	if namespace == nil {
+		return nil
+	}
+	return map[string]string{"X-Ditto-Namespace": *namespace}
 }

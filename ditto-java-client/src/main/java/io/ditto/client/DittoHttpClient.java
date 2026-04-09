@@ -42,6 +42,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
     }
 
     public DittoGetResult get(String key, String namespace) throws IOException, InterruptedException {
+        validateCoreInputs("get", key, namespace);
         HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key), namespace).GET().build());
         if (resp.statusCode() == 404) return null;
         assertOk(resp);
@@ -63,6 +64,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /** Set a value in a specific namespace. ttlSecs = 0 or omitted means no expiry. */
     public DittoSetResult set(String key, String value, long ttlSecs, String namespace) throws IOException, InterruptedException {
+        validateCoreInputs("set", key, namespace);
         String path = "/key/" + urlEncode(key) + (ttlSecs > 0 ? "?ttl=" + ttlSecs : "");
         HttpRequest req = requestBuilder(path, namespace)
                 .PUT(HttpRequest.BodyPublishers.ofString(value))
@@ -81,6 +83,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
     }
 
     public boolean delete(String key, String namespace) throws IOException, InterruptedException {
+        validateCoreInputs("delete", key, namespace);
         HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key), namespace).DELETE().build());
         if (resp.statusCode() == 404) return false;
         if (resp.statusCode() == 204) return true;

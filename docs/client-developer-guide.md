@@ -7,6 +7,7 @@ This guide documents the current state of Ditto client SDKs in this repository.
 - Node.js client: `ditto-nodejs-client`
 - Java client: `ditto-java-client`
 - Python client: `ditto-python-client`
+- Go client: `ditto-go-client`
 
 Shared behavior target:
 - same core cache operations across SDKs,
@@ -20,16 +21,17 @@ Shared behavior target:
 
 ## Feature matrix (current)
 
-| Feature | Node.js | Java | Python |
-|---|---|---|---|
-| TCP client | yes | yes | yes |
-| HTTP client | yes | yes | yes |
-| `ping/get/set/delete` | yes | yes | yes |
-| `deleteByPattern` / `delete_by_pattern` | yes | yes | yes |
-| `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes |
-| Namespace-aware operations | yes | yes | yes |
-| Key watch/unwatch (TCP) | yes | no | no |
-| Auto reconnect (TCP) | yes | no | no |
+| Feature | Node.js | Java | Python | Go |
+|---|---|---|---|---|
+| TCP client | yes | yes | yes | yes |
+| HTTP client | yes | yes | yes | yes |
+| `ping/get/set/delete` | yes | yes | yes | yes |
+| `deleteByPattern` / `delete_by_pattern` | yes | yes | yes | yes |
+| `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes | yes |
+| Namespace-aware operations | yes | yes | yes | yes |
+| Strict mode (`key`/`namespace` validation) | yes | yes | yes | yes |
+| Key watch/unwatch (TCP) | yes | no | no | no |
+| Auto reconnect (TCP) | yes | no | no | no |
 
 ## API semantics
 
@@ -58,6 +60,14 @@ Shared behavior target:
 - HTTP clients send namespace with `X-Ditto-Namespace` header.
 - TCP clients encode namespace via protocol `Option<String>` field on request variants.
 - Omitted/empty namespace falls back to server-side default namespace behavior.
+
+### Strict mode semantics
+
+- Each SDK has an opt-in strict mode for `get/set/delete`.
+- When enabled:
+  - `key` must be non-empty and match `[A-Za-z0-9._:-]+`,
+  - `namespace` (if provided) must be non-empty, must not contain `::`, and must match `[A-Za-z0-9._:-]+`.
+- Strict mode validation happens client-side before network I/O.
 
 Examples of patterns:
 - `user:*`
@@ -95,6 +105,12 @@ For long-lived idle watch connections:
 - Synchronous API.
 - Context manager support for TCP client.
 - Pattern operations are available on both HTTP and TCP clients.
+
+## Go notes
+
+- Synchronous API for HTTP and TCP clients.
+- Namespace-aware helpers are available for both protocols.
+- Strict mode is available via `StrictMode: true` in client options.
 
 ## Local development
 

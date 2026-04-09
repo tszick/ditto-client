@@ -14,6 +14,7 @@ from .types import (
     DittoSetTtlByPatternResult,
     DittoStatsResult,
 )
+from .validation import validate_core_inputs
 
 
 class DittoHttpClient(DittoHttpClientBase):
@@ -37,6 +38,7 @@ class DittoHttpClient(DittoHttpClientBase):
 
     def get(self, key: str, namespace: str | None = None) -> DittoGetResult | None:
         """Get a value by key. Returns null when the key does not exist or has expired."""
+        validate_core_inputs(self._strict_mode, "get", key, namespace)
         status, body = self._request(
             f'/key/{self._url_encode(key)}',
             extra_headers=self._namespace_headers(namespace),
@@ -49,6 +51,7 @@ class DittoHttpClient(DittoHttpClientBase):
 
     def set(self, key: str, value: str, ttl_secs: int = 0, namespace: str | None = None) -> DittoSetResult:
         """Set a value. ttlSecs = 0 or omitted means no expiry."""
+        validate_core_inputs(self._strict_mode, "set", key, namespace)
         path = f'/key/{self._url_encode(key)}'
         if ttl_secs > 0:
             path += f'?ttl={ttl_secs}'
@@ -65,6 +68,7 @@ class DittoHttpClient(DittoHttpClientBase):
 
     def delete(self, key: str, namespace: str | None = None) -> bool:
         """Delete a key. Returns true if the key existed, false if not found."""
+        validate_core_inputs(self._strict_mode, "delete", key, namespace)
         status, body = self._request(
             f'/key/{self._url_encode(key)}',
             method='DELETE',

@@ -40,6 +40,7 @@ public class DittoTcpClient implements Closeable {
     private final String host;
     private final int    port;
     private final String authToken;
+    private final boolean strictMode;
 
     private Socket           socket;
     private DataInputStream  in;
@@ -48,17 +49,22 @@ public class DittoTcpClient implements Closeable {
     // ── Constructors ──────────────────────────────────────────────────────────
 
     public DittoTcpClient() {
-        this("localhost", 7777, null);
+        this("localhost", 7777, null, false);
     }
 
     public DittoTcpClient(String host, int port) {
-        this(host, port, null);
+        this(host, port, null, false);
     }
 
     public DittoTcpClient(String host, int port, String authToken) {
+        this(host, port, authToken, false);
+    }
+
+    public DittoTcpClient(String host, int port, String authToken, boolean strictMode) {
         this.host = host;
         this.port = port;
         this.authToken = authToken;
+        this.strictMode = strictMode;
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -110,6 +116,7 @@ public class DittoTcpClient implements Closeable {
     }
 
     public synchronized DittoGetResult get(String key, String namespace) throws IOException {
+        validateCoreInputs("get", key, namespace);
         sendFrame(encodeGet(key, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
@@ -163,6 +170,7 @@ public class DittoTcpClient implements Closeable {
      */
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException {
+        validateCoreInputs("set", key, namespace);
         sendFrame(encodeSet(key, value, ttlSecs, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
@@ -180,6 +188,7 @@ public class DittoTcpClient implements Closeable {
     }
 
     public synchronized boolean delete(String key, String namespace) throws IOException {
+        validateCoreInputs("delete", key, namespace);
         sendFrame(encodeDelete(key, namespace));
         Response resp = readResponse();
         return switch (resp.type) {
@@ -324,6 +333,42 @@ public class DittoTcpClient implements Closeable {
     private static byte[] namespaceBytes(String namespace) {
         if (namespace == null || namespace.isBlank()) return null;
         return namespace.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void validateCoreInputs(String op, String key, String namespace) {
+        if (!strictMode) return;
+        if (key == null || key.trim().isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: key must not be empty.");
+        }
+        if (!isStrictToken(key)) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            );
+        }
+        if (namespace == null) return;
+        String ns = namespace.trim();
+        if (ns.isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not be blank when provided.");
+        }
+        if (ns.contains("::")) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not contain '::'.");
+        }
+        if (!isStrictToken(ns)) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            );
+        }
+    }
+
+    private static boolean isStrictToken(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':') {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 
     private static void putOptionalString(ByteBuffer buf, byte[] value) {

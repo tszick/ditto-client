@@ -48,6 +48,8 @@ export interface DittoHttpClientOptions {
   circuitOpenMs?: number;
   /** Successful half-open probes needed to close circuit. Default: 2 */
   circuitHalfOpenMaxRequests?: number;
+  /** Enable strict client-side request validation for key/namespace. Default: false */
+  strictMode?: boolean;
 }
 
 export class DittoHttpClientBase {
@@ -65,6 +67,7 @@ export class DittoHttpClientBase {
   private readonly circuitFailureThreshold: number;
   private readonly circuitOpenMs: number;
   private readonly circuitHalfOpenMaxRequests: number;
+  private readonly strictMode: boolean;
   private circuitState: 'closed' | 'open' | 'half-open' = 'closed';
   private circuitFailures = 0;
   private circuitOpenUntilMs = 0;
@@ -98,6 +101,7 @@ export class DittoHttpClientBase {
     this.circuitFailureThreshold = Math.max(1, opts.circuitFailureThreshold ?? 5);
     this.circuitOpenMs = Math.max(1, opts.circuitOpenMs ?? 5_000);
     this.circuitHalfOpenMaxRequests = Math.max(1, opts.circuitHalfOpenMaxRequests ?? 2);
+    this.strictMode = opts.strictMode ?? false;
   }
 
   // ── Shared infrastructure (used by generated endpoint methods) ──────────────
@@ -281,7 +285,36 @@ export class DittoHttpClientBase {
     if (status === 404) return 'KeyNotFound';
     return 'InternalError';
   }
+
+  /** @internal */
+  protected validateCoreInputs(op: 'get' | 'set' | 'delete', key: string, namespace?: string): void {
+    if (!this.strictMode) return;
+    const keyTrimmed = key.trim();
+    if (keyTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: key must not be empty.`);
+    }
+    if (!STRICT_TOKEN_RE.test(key)) {
+      throw new Error(
+        `Invalid ${op} request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+    if (namespace === undefined) return;
+    const nsTrimmed = namespace.trim();
+    if (nsTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
+    }
+    if (nsTrimmed.includes('::')) {
+      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
+    }
+    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+  }
 }
+
+const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
 
 function isKnownErrorCode(code: DittoErrorCode): boolean {
   return [

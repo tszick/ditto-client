@@ -75,6 +75,8 @@ export interface DittoTcpClientOptions {
   requestTimeoutMs?: number;
   /** Maximum accepted response frame size in bytes. Default: 8 MiB */
   maxFrameBytes?: number;
+  /** Enable strict client-side request validation for key/namespace. Default: false */
+  strictMode?: boolean;
 }
 
 /** A waiter represents one pending request (sent or queued). */
@@ -96,6 +98,7 @@ export class DittoTcpClient {
   private readonly maxBackoffMs:         number;
   private readonly requestTimeoutMs:     number;
   private readonly maxFrameBytes:        number;
+  private readonly strictMode:           boolean;
 
   private socket:   net.Socket | null = null;
   private recvBuf:  Buffer = Buffer.alloc(0);
@@ -132,6 +135,7 @@ export class DittoTcpClient {
     this.maxBackoffMs         = opts.maxBackoffMs         ?? 30_000;
     this.requestTimeoutMs     = opts.requestTimeoutMs     ?? 10_000;
     this.maxFrameBytes        = opts.maxFrameBytes        ?? (8 * 1024 * 1024);
+    this.strictMode           = opts.strictMode           ?? false;
   }
 
   // ---------------------------------------------------------------------------
@@ -180,6 +184,7 @@ export class DittoTcpClient {
    * The returned `value` is a raw Buffer (the stored bytes, unchanged).
    */
   async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
+    this.validateCoreInputs('get', key, namespace);
     const resp = await this.send(encodeGet(key, namespace));
     if (resp.type === 'NotFound') return null;
     if (resp.type === 'Value')    return { value: resp.value, version: resp.version };
@@ -197,6 +202,7 @@ export class DittoTcpClient {
     ttlSecs?: number,
     namespace?: string,
   ): Promise<DittoSetResult> {
+    this.validateCoreInputs('set', key, namespace);
     const valueBuf = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
     const resp     = await this.send(encodeSet(key, valueBuf, ttlSecs, namespace));
     if (resp.type === 'Ok')    return { version: resp.version };
@@ -208,6 +214,7 @@ export class DittoTcpClient {
    * Delete a key. Returns `true` if the key existed, `false` if not found.
    */
   async delete(key: string, namespace?: string): Promise<boolean> {
+    this.validateCoreInputs('delete', key, namespace);
     const resp = await this.send(encodeDelete(key, namespace));
     if (resp.type === 'Deleted')  return true;
     if (resp.type === 'NotFound') return false;
@@ -506,4 +513,32 @@ export class DittoTcpClient {
     const queue = this.offlineQueue.splice(0);
     for (const w of queue) w.reject(err);
   }
+
+  private validateCoreInputs(op: 'get' | 'set' | 'delete', key: string, namespace?: string): void {
+    if (!this.strictMode) return;
+    const keyTrimmed = key.trim();
+    if (keyTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: key must not be empty.`);
+    }
+    if (!STRICT_TOKEN_RE.test(key)) {
+      throw new Error(
+        `Invalid ${op} request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+    if (namespace === undefined) return;
+    const nsTrimmed = namespace.trim();
+    if (nsTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
+    }
+    if (nsTrimmed.includes('::')) {
+      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
+    }
+    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+  }
 }
+
+const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;

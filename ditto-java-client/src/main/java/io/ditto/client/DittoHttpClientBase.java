@@ -53,12 +53,14 @@ public abstract class DittoHttpClientBase {
     private final String     baseUrl;
     private final String     authHeader;
     private final HttpClient httpClient;
+    protected final boolean strictMode;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
     protected DittoHttpClientBase(Builder<?> b) {
         String scheme  = b.tls ? "https" : "http";
         this.baseUrl   = scheme + "://" + b.host + ":" + b.port;
+        this.strictMode = b.strictMode;
 
         if (b.username != null && b.password != null) {
             String creds = b.username + ":" + b.password;
@@ -146,6 +148,42 @@ public abstract class DittoHttpClientBase {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
+    protected void validateCoreInputs(String op, String key, String namespace) {
+        if (!strictMode) return;
+        if (key == null || key.trim().isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: key must not be empty.");
+        }
+        if (!isStrictToken(key)) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            );
+        }
+        if (namespace == null) return;
+        String ns = namespace.trim();
+        if (ns.isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not be blank when provided.");
+        }
+        if (ns.contains("::")) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not contain '::'.");
+        }
+        if (!isStrictToken(ns)) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            );
+        }
+    }
+
+    private static boolean isStrictToken(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':') {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Build an SSL context that trusts exactly one provided X.509 certificate.
      * Useful for self-signed cert deployments without disabling TLS validation.
@@ -184,6 +222,7 @@ public abstract class DittoHttpClientBase {
         String  trustedCertPath;
         String  username;
         String  password;
+        boolean strictMode = false;
 
         public B host(String host)   { this.host     = host;   return (B) this; }
         public B port(int port)      { this.port     = port;   return (B) this; }
@@ -192,6 +231,7 @@ public abstract class DittoHttpClientBase {
         public B trustedCertPath(String path) { this.trustedCertPath = path; return (B) this; }
         public B username(String u)  { this.username = u;      return (B) this; }
         public B password(String p)  { this.password = p;      return (B) this; }
+        public B strictMode(boolean strictMode) { this.strictMode = strictMode; return (B) this; }
 
         public abstract DittoHttpClient build();
     }

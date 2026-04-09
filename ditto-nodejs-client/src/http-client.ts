@@ -32,6 +32,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
 
   /** Get a value by key. Returns null when the key does not exist or has expired. */
   async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
+    this.validateCoreInputs('get', key, namespace);
     const resp = await this.request(`/key/${encodeURIComponent(key)}`, {
       headers: this.namespaceHeaders(namespace),
     });
@@ -43,6 +44,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
 
   /** Set a value. ttlSecs = 0 or omitted means no expiry. */
   async set(key: string, value: string, ttlSecs?: number, namespace?: string): Promise<DittoSetResult> {
+    this.validateCoreInputs('set', key, namespace);
     const url  = ttlSecs && ttlSecs > 0
       ? `/key/${encodeURIComponent(key)}?ttl=${ttlSecs}`
       : `/key/${encodeURIComponent(key)}`;
@@ -61,6 +63,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
 
   /** Delete a key. Returns true if the key existed, false if not found. */
   async delete(key: string, namespace?: string): Promise<boolean> {
+    this.validateCoreInputs('delete', key, namespace);
     const resp = await this.request(`/key/${encodeURIComponent(key)}`, {
       method: 'DELETE',
       headers: this.namespaceHeaders(namespace),

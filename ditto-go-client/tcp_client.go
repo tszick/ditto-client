@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 )
@@ -16,6 +15,7 @@ type TCPClientOptions struct {
 	AuthToken     string
 	Timeout       time.Duration
 	MaxFrameBytes uint32
+	StrictMode    bool
 }
 
 type TCPClient struct {
@@ -24,6 +24,7 @@ type TCPClient struct {
 	authToken     string
 	timeout       time.Duration
 	maxFrameBytes uint32
+	strictMode    bool
 
 	mu   sync.Mutex
 	conn net.Conn
@@ -46,7 +47,9 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 	if maxFrame == 0 {
 		maxFrame = 8 * 1024 * 1024
 	}
-	return &TCPClient{host: host, port: port, authToken: opts.AuthToken, timeout: timeout, maxFrameBytes: maxFrame}
+	return &TCPClient{
+		host: host, port: port, authToken: opts.AuthToken, timeout: timeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode,
+	}
 }
 
 func (c *TCPClient) Connect() error {
@@ -167,7 +170,14 @@ func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendLocked(encodeGet(key, normalizeNamespace(namespace...)))
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "get", key, ns); err != nil {
+		return nil, err
+	}
+	resp, err := c.sendLocked(encodeGet(key, ns))
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +197,9 @@ func (c *TCPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.ensureConnectedLocked(); err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, nil); err != nil {
 		return nil, err
 	}
 	var ttl *uint64
@@ -217,11 +230,18 @@ func (c *TCPClient) SetInNamespace(key string, value []byte, namespace string, t
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
+		return nil, err
+	}
 	var ttl *uint64
 	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
 		ttl = &ttlSecs[0]
 	}
-	resp, err := c.sendLocked(encodeSet(key, value, ttl, normalizeNamespace(namespace)))
+	resp, err := c.sendLocked(encodeSet(key, value, ttl, ns))
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +265,14 @@ func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return false, err
 	}
-	resp, err := c.sendLocked(encodeDelete(key, normalizeNamespace(namespace...)))
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return false, err
+	}
+	if err := validateCoreInputs(c.strictMode, "delete", key, ns); err != nil {
+		return false, err
+	}
+	resp, err := c.sendLocked(encodeDelete(key, ns))
 	if err != nil {
 		return false, err
 	}
@@ -306,12 +333,6 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 }
 
 func normalizeNamespace(namespace ...string) *string {
-	if len(namespace) == 0 {
-		return nil
-	}
-	ns := strings.TrimSpace(namespace[0])
-	if ns == "" {
-		return nil
-	}
-	return &ns
+	ns, _ := normalizedNamespaceStrict(false, namespace...)
+	return ns
 }
