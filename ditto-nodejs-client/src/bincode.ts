@@ -212,6 +212,7 @@ export function decodeResponse(buf: Buffer): ClientResponse {
       if (hasValue === 1) {
         const valLen = readu64LE(buf, off); off += 8;
         value = Buffer.from(buf.subarray(off, off + valLen));
+        off += valLen;
       }
       const version = readu64LE(buf, off);
       return { type: 'WatchEvent', key, value, version };
