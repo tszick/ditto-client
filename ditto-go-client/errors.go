@@ -10,6 +10,8 @@ const (
 	ErrWriteTimeout    = "WriteTimeout"
 	ErrValueTooLarge   = "ValueTooLarge"
 	ErrKeyLimitReached = "KeyLimitReached"
+	ErrRateLimited     = "RateLimited"
+	ErrCircuitOpen     = "CircuitOpen"
 	ErrAuthFailed      = "AuthFailed"
 )
 

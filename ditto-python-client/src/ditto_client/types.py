@@ -69,6 +69,8 @@ class DittoErrorCode(str, Enum):
     WRITE_TIMEOUT    = "WriteTimeout"
     VALUE_TOO_LARGE  = "ValueTooLarge"
     KEY_LIMIT_REACHED = "KeyLimitReached"
+    RATE_LIMITED     = "RateLimited"
+    CIRCUIT_OPEN     = "CircuitOpen"
     AUTH_FAILED      = "AuthFailed"
 
 

@@ -9,6 +9,8 @@ public enum DittoErrorCode {
     WRITE_TIMEOUT,
     VALUE_TOO_LARGE,
     KEY_LIMIT_REACHED,
+    RATE_LIMITED,
+    CIRCUIT_OPEN,
     AUTH_FAILED;
 
     private static final DittoErrorCode[] VALUES = values();

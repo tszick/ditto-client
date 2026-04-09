@@ -250,7 +250,18 @@ func decodeResponse(payload []byte) (*tcpResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		codes := []string{ErrNodeInactive, ErrNoQuorum, ErrKeyNotFound, ErrInternalError, ErrWriteTimeout, ErrValueTooLarge, ErrKeyLimitReached, ErrAuthFailed}
+		codes := []string{
+			ErrNodeInactive,
+			ErrNoQuorum,
+			ErrKeyNotFound,
+			ErrInternalError,
+			ErrWriteTimeout,
+			ErrValueTooLarge,
+			ErrKeyLimitReached,
+			ErrRateLimited,
+			ErrCircuitOpen,
+			ErrAuthFailed,
+		}
 		code := ErrInternalError
 		if int(codeIdx) < len(codes) {
 			code = codes[codeIdx]
