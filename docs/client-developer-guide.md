@@ -245,6 +245,5 @@ When introducing protocol-level changes:
   - guide sync after parity rollout,
   - docker integration parity for watch flow,
   - reconnect regression coverage in Java/Python/Go,
-  - client README consistency pass.
-- Next candidate:
-  - optional stricter docker watch assertion mode for environments where key namespace prefix is deterministic.
+  - client README consistency pass,
+  - optional strict docker watch assertion mode (`DITTO_STRICT_WATCH_ASSERT`) with best-effort default.
