@@ -30,8 +30,8 @@ Shared behavior target:
 | `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes | yes |
 | Namespace-aware operations | yes | yes | yes | yes |
 | Strict mode (`key`/`namespace` validation) | yes | yes | yes | yes |
-| Key watch/unwatch (TCP) | yes | no | no | no |
-| Auto reconnect (TCP) | yes | no | no | no |
+| Key watch/unwatch (TCP) | yes | yes | yes | yes |
+| Auto reconnect (TCP) | yes | yes | yes | yes |
 
 ## API semantics
 
@@ -98,6 +98,8 @@ For long-lived idle watch connections:
 
 - `DittoTcpClient` and `DittoHttpClient` expose matching core operations.
 - Pattern operations are available on both clients.
+- TCP watch APIs are available: `watch(key)`, `waitForWatchEvent()`, `unwatch(key)`.
+- TCP optional reconnect retry is available via `new DittoTcpClient(host, port, authToken, strictMode, autoReconnect)`.
 - Exceptions are surfaced as `IOException`, `InterruptedException`, or Ditto-specific exception types depending on layer.
 
 ## Python notes
@@ -105,12 +107,59 @@ For long-lived idle watch connections:
 - Synchronous API.
 - Context manager support for TCP client.
 - Pattern operations are available on both HTTP and TCP clients.
+- TCP watch APIs are available: `watch(key)`, `wait_watch_event()`, `unwatch(key)`.
+- TCP optional reconnect retry is available via `auto_reconnect=True`.
 
 ## Go notes
 
 - Synchronous API for HTTP and TCP clients.
 - Namespace-aware helpers are available for both protocols.
 - Strict mode is available via `StrictMode: true` in client options.
+- TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
+- TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
+
+## Watch flow examples
+
+### Java
+
+```java
+try (DittoTcpClient tcp = new DittoTcpClient("localhost", 7777, null, false, true)) {
+    tcp.connect();
+    tcp.watch("k");
+    tcp.set("k", "value");
+    DittoWatchEvent ev = tcp.waitForWatchEvent();
+    tcp.unwatch("k");
+}
+```
+
+### Python
+
+```python
+from ditto_client import DittoTcpClient
+
+with DittoTcpClient(host="localhost", port=7777, auto_reconnect=True) as tcp:
+    tcp.watch("k")
+    tcp.set("k", "value")
+    ev = tcp.wait_watch_event()
+    tcp.unwatch("k")
+```
+
+### Go
+
+```go
+tcp := ditto.NewTCPClient(ditto.TCPClientOptions{
+    Host: "localhost",
+    Port: 7777,
+    AutoReconnect: true,
+})
+_ = tcp.Connect()
+_ = tcp.Watch("k")
+_, _ = tcp.SetString("k", "value")
+ev, _ := tcp.WaitWatchEvent()
+_ = tcp.Unwatch("k")
+_ = tcp.Close()
+_ = ev
+```
 
 ## Local development
 
@@ -120,7 +169,7 @@ For long-lived idle watch connections:
 cd ditto-client/ditto-nodejs-client
 npm install
 npm run build
-npm run test:unit
+npm run test:integration
 ```
 
 ### Java client
@@ -134,7 +183,7 @@ cd ditto-client/ditto-java-client
 
 ```bash
 cd ditto-client/ditto-python-client
-python -m pytest
+python -m unittest discover -s tests -v
 ```
 
 (Exact available test tasks depend on local setup; docker tests below are the canonical integration path used in this workspace.)
@@ -179,7 +228,7 @@ Pass condition:
 When introducing protocol-level changes:
 
 1. Update `ditto-protocol` enums and wire behavior.
-2. Update all three SDKs (Node/Java/Python).
+2. Update all four SDKs (Node/Java/Python/Go).
 3. Update docker integration tests under `ditto-docker/clients/*`.
 4. Re-run all client docker suites.
 5. Update this guide.
@@ -189,3 +238,13 @@ When introducing protocol-level changes:
 - Path confusion: client integration compose files are in `ditto-docker`, not `ditto-client`.
 - Self-signed TLS in dev: expected; keep strict verification in production.
 - Watch traffic: server may stay idle for long periods by design; avoid client idle timeouts for watch-only sessions.
+
+## Backlog status
+
+- Completed (2026-04-09):
+  - guide sync after parity rollout,
+  - docker integration parity for watch flow,
+  - reconnect regression coverage in Java/Python/Go,
+  - client README consistency pass.
+- Next candidate:
+  - optional stricter docker watch assertion mode for environments where key namespace prefix is deterministic.

@@ -1,6 +1,6 @@
 ﻿# ditto-client
 
-Node.js client library for [Ditto](https://github.com/yourorg/ditto) - a distributed in-memory cache.
+Node.js client library for [Ditto](https://github.com/tszick/ditto-cache) - a distributed in-memory cache.
 
 Two client classes are provided:
 
@@ -102,8 +102,16 @@ new DittoHttpClient(opts?: {
 
 ```typescript
 new DittoTcpClient(opts?: {
-  host?: string;  // default: 'localhost'
-  port?: number;  // default: 7777
+  host?: string;                // default: 'localhost'
+  port?: number;                // default: 7777
+  authToken?: string;           // optional TCP auth token
+  autoReconnect?: boolean;      // default: false
+  maxReconnectAttempts?: number; // default: 0 (unlimited)
+  baseBackoffMs?: number;       // default: 200
+  maxBackoffMs?: number;        // default: 30000
+  requestTimeoutMs?: number;    // default: 10000
+  maxFrameBytes?: number;       // default: 8 MiB
+  strictMode?: boolean;         // default: false
 })
 ```
 
@@ -121,6 +129,8 @@ new DittoTcpClient(opts?: {
 | `watch(key, callback, namespace?)` | Subscribe to key updates | `Promise<void>` |
 | `unwatch(key, namespace?)` | Unsubscribe from key updates | `Promise<void>` |
 | `close()` | Close the TCP connection | `Promise<void>` |
+
+`watch()` callback signature: `(value: Buffer | null, version: number) => void`.
 
 ---
 
@@ -236,15 +246,19 @@ const client = new DittoHttpClient({
 
 ## Docker test environment
 
-A self-contained Docker Compose test environment lives at
-`docker/clients/nodejs/` (relative to the repository root).
+A self-contained Docker Compose test environment lives under
+`ditto-docker/clients/nodejs/` (workspace-relative path).
 
 It starts a single dittod node and runs both test apps against it:
 
 ```bash
-cd ditto/docker/clients/nodejs
-docker compose up --build --abort-on-container-exit
+cd ditto-docker
+docker compose -f clients/nodejs/docker-compose.yml up --build --abort-on-container-exit
+docker compose -f clients/nodejs/docker-compose.yml down -v --remove-orphans
 ```
 
-The first run compiles the Rust binaries (~3-5 min), subsequent runs use
-Docker's build cache.
+## Local tests
+
+```bash
+npm run test:integration
+```

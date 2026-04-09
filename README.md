@@ -27,12 +27,13 @@ _, _ = tcp.SetString("foo", "bar", 60)
 ```
 
 Supports HTTP and TCP clients, including pattern operations.
+TCP also supports `watch/unwatch`, `WaitWatchEvent()`, strict mode and optional one-shot auto reconnect (`AutoReconnect: true`).
 
 ---
 
 ### Java - `ditto-java-client`
 
-Requires Java 11+. Built with Gradle.
+Requires Java 21. Built with Gradle.
 
 ```java
 // HTTP
@@ -41,12 +42,13 @@ http.set("foo", "bar", 60);
 DittoGetResult r = http.get("foo");
 
 // TCP
-DittoTcpClient tcp = new DittoTcpClient.Builder().host("localhost").port(7777).build();
+DittoTcpClient tcp = new DittoTcpClient("localhost", 7777, null, false, true); // autoReconnect=true
+tcp.connect();
 tcp.set("foo", "bar", 0);
 tcp.delete("foo");
 ```
 
-Both clients are thread-safe. HTTP uses Java's built-in `HttpClient`; TCP uses a persistent socket connection.
+Both clients are thread-safe. HTTP uses Java's built-in `HttpClient`; TCP uses a persistent socket connection and supports `watch/unwatch` + `waitForWatchEvent()`.
 
 ---
 
@@ -64,6 +66,7 @@ await client.close();
 ```
 
 All methods are `async`. The TCP client queues concurrent requests internally.
+TCP also supports `watch/unwatch`, optional reconnect queue (`autoReconnect`) and reconnect backoff settings.
 
 ---
 
@@ -80,6 +83,7 @@ with DittoTcpClient(host="localhost", port=7777) as client:
 ```
 
 Synchronous blocking API. Thread-safe via internal lock. Context manager supported.
+TCP also supports `watch/unwatch`, `wait_watch_event()` and optional one-shot auto reconnect (`auto_reconnect=True`).
 
 ---
 
@@ -95,8 +99,9 @@ Core operations available across clients:
 | `delete(key, namespace?)` | Delete key, returns bool |
 | `deleteByPattern(pattern, namespace?)` | Delete keys by glob pattern |
 | `setTtlByPattern(pattern, ttl, namespace?)` | Update TTL by glob pattern |
-| `watch(key, namespace?)` | Subscribe to key updates (TCP clients) |
+| `watch(key, ...)` | Subscribe to key updates (TCP clients) |
 | `unwatch(key, namespace?)` | Cancel key update subscription (TCP clients) |
+| `wait watch event` (`waitForWatchEvent` / `wait_watch_event` / `WaitWatchEvent`) | Block for next watch event frame (TCP clients) |
 | `stats()` | Cache statistics - HTTP client only |
 
 Some clients also expose pattern operations (`delete-by-pattern`, `set-ttl-by-pattern`) and protocol-specific features.
@@ -133,3 +138,12 @@ Client impact:
 | TCP binary | 7777 | Auth token |
 
 Both protocols support TLS. The TCP protocol uses Bincode 1.x encoding with a 4-byte big-endian frame length prefix.
+
+## Quick test commands
+
+```bash
+cd ditto-client/ditto-go-client && go test ./...
+cd ditto-client/ditto-python-client && python -m unittest discover -s tests -v
+cd ditto-client/ditto-java-client && ./gradlew test --console=plain
+cd ditto-client/ditto-nodejs-client && npm run test:integration
+```

@@ -5,8 +5,9 @@ Go client library for Ditto (`dittod`) with HTTP and TCP clients.
 ## Features
 
 - HTTP client (port 7778): `Ping`, `Get`, `Set`, `Delete`, `Stats`, pattern ops
-- TCP client (port 7777): `Ping`, `Get`, `Set`, `Delete`, pattern ops, `Watch`/`Unwatch`, optional auth token
+- TCP client (port 7777): `Ping`, `Get`, `Set`, `Delete`, pattern ops, `Watch`/`Unwatch`, `WaitWatchEvent`, optional auth token
 - Namespace-aware operations on both protocols
+- Optional one-shot reconnect retry on TCP via `AutoReconnect: true`
 - No dependency on `ditto-mgmt`
 
 ## Quick usage
@@ -18,6 +19,23 @@ stats, err := httpClient.Stats()
 client := ditto.NewTCPClient(ditto.TCPClientOptions{Host: "localhost", Port: 7777})
 _ = client.Connect()
 _, _ = client.SetString("k", "v", 60)
+```
+
+## Watch + reconnect example
+
+```go
+tcp := ditto.NewTCPClient(ditto.TCPClientOptions{
+    Host:          "localhost",
+    Port:          7777,
+    AutoReconnect: true,
+})
+_ = tcp.Connect()
+_ = tcp.Watch("k")
+_, _ = tcp.SetString("k", "value")
+ev, _ := tcp.WaitWatchEvent()
+_ = ev
+_ = tcp.Unwatch("k")
+_ = tcp.Close()
 ```
 
 ## Namespace usage
@@ -34,3 +52,9 @@ _, _ = tcp.Get("k", "tenant-acme")
 ```
 
 For `Get/Delete/DeleteByPattern/SetTtlByPattern`, the namespace is passed as an optional variadic argument.
+
+## Tests
+
+```bash
+go test ./...
+```
