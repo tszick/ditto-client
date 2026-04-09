@@ -17,6 +17,12 @@ type SetTtlByPatternResult struct {
 	Updated uint64 `json:"updated"`
 }
 
+type WatchEventResult struct {
+	Key     string
+	Value   []byte
+	Version uint64
+}
+
 type StatsResult struct {
 	NodeID                    string `json:"node_id"`
 	Status                    string `json:"status"`

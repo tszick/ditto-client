@@ -95,6 +95,8 @@ Core operations available across clients:
 | `delete(key, namespace?)` | Delete key, returns bool |
 | `deleteByPattern(pattern, namespace?)` | Delete keys by glob pattern |
 | `setTtlByPattern(pattern, ttl, namespace?)` | Update TTL by glob pattern |
+| `watch(key, namespace?)` | Subscribe to key updates (TCP clients) |
+| `unwatch(key, namespace?)` | Cancel key update subscription (TCP clients) |
 | `stats()` | Cache statistics - HTTP client only |
 
 Some clients also expose pattern operations (`delete-by-pattern`, `set-ttl-by-pattern`) and protocol-specific features.

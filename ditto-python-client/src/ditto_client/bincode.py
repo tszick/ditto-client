@@ -88,6 +88,13 @@ def encode_ping() -> bytes:
 def encode_auth(token: str) -> bytes:
     return _frame(struct.pack("<I", 4) + _pack_string(token))
 
+def encode_watch(key: str, namespace: str | None = None) -> bytes:
+    return _frame(struct.pack("<I", 5) + _pack_string(key) + _pack_opt_string(namespace))
+
+
+def encode_unwatch(key: str, namespace: str | None = None) -> bytes:
+    return _frame(struct.pack("<I", 6) + _pack_string(key) + _pack_opt_string(namespace))
+
 
 def encode_delete_by_pattern(pattern: str, namespace: str | None = None) -> bytes:
     return _frame(struct.pack("<I", 7) + _pack_string(pattern) + _pack_opt_string(namespace))
@@ -120,12 +127,18 @@ class _Ok(NamedTuple):
     version: int
 
 class _Simple(NamedTuple):
-    type: str          # 'Deleted' | 'NotFound' | 'Pong' | 'AuthOk'
+    type: str          # 'Deleted' | 'NotFound' | 'Pong' | 'AuthOk' | 'Watching' | 'Unwatched'
 
 class _Error(NamedTuple):
     type: str          # 'Error'
     code: DittoErrorCode
     message: str
+
+class _WatchEvent(NamedTuple):
+    type: str          # 'WatchEvent'
+    key: str
+    value: bytes | None
+    version: int
 
 class _PatternDeleted(NamedTuple):
     type: str          # 'PatternDeleted'
@@ -135,7 +148,7 @@ class _PatternTtlUpdated(NamedTuple):
     type: str          # 'PatternTtlUpdated'
     updated: int
 
-ClientResponse = _Value | _Ok | _Simple | _Error | _PatternDeleted | _PatternTtlUpdated
+ClientResponse = _Value | _Ok | _Simple | _Error | _WatchEvent | _PatternDeleted | _PatternTtlUpdated
 
 
 def decode_response(buf: bytes) -> ClientResponse:
@@ -189,6 +202,22 @@ def decode_response(buf: bytes) -> ClientResponse:
         message  = read_bytes().decode("utf-8")
         code = _ERROR_CODE_NAMES[code_idx] if code_idx < len(_ERROR_CODE_NAMES) else DittoErrorCode.INTERNAL_ERROR
         return _Error("Error", code, message)
+
+    if variant == 7:   # Watching
+        return _Simple("Watching")
+
+    if variant == 8:   # Unwatched
+        return _Simple("Unwatched")
+
+    if variant == 9:   # WatchEvent { key, value: Option<Bytes>, version }
+        key = read_bytes().decode("utf-8")
+        has_value = struct.unpack_from("B", buf, off)[0]
+        off += 1
+        value: bytes | None = None
+        if has_value == 1:
+            value = read_bytes()
+        version = read_u64()
+        return _WatchEvent("WatchEvent", key, value, version)
 
     if variant == 10:  # PatternDeleted { deleted }
         deleted = read_u64()

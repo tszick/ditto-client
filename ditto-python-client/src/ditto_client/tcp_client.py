@@ -20,6 +20,8 @@ from .bincode import (
     encode_ping,
     encode_set,
     encode_set_ttl_by_pattern,
+    encode_unwatch,
+    encode_watch,
 )
 from .types import (
     DittoDeleteByPatternResult,
@@ -27,6 +29,7 @@ from .types import (
     DittoGetResult,
     DittoSetResult,
     DittoSetTtlByPatternResult,
+    DittoWatchEvent,
 )
 from .validation import validate_core_inputs
 
@@ -194,6 +197,38 @@ class DittoTcpClient:
         resp = self._send(encode_set_ttl_by_pattern(pattern, ttl_secs, namespace))
         if resp.type == "PatternTtlUpdated":
             return DittoSetTtlByPatternResult(updated=resp.updated)  # type: ignore[union-attr]
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def watch(self, key: str, namespace: str | None = None) -> None:
+        """Subscribe to updates for a key."""
+        validate_core_inputs(self._strict_mode, "watch", key, namespace)
+        resp = self._send(encode_watch(key, namespace))
+        if resp.type == "Watching":
+            return
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def unwatch(self, key: str, namespace: str | None = None) -> None:
+        """Cancel a key subscription."""
+        validate_core_inputs(self._strict_mode, "unwatch", key, namespace)
+        resp = self._send(encode_unwatch(key, namespace))
+        if resp.type == "Unwatched":
+            return
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def wait_watch_event(self) -> DittoWatchEvent:
+        """Block until the next watch event frame arrives."""
+        with self._lock:
+            if self._sock is None:
+                raise RuntimeError("Not connected. Call connect() first.")
+            resp = self._recv()
+        if resp.type == "WatchEvent":
+            return DittoWatchEvent(key=resp.key, value=resp.value, version=resp.version)  # type: ignore[union-attr]
         if resp.type == "Error":
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")

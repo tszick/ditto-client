@@ -10,6 +10,7 @@ from .types import (
     DittoSetResult,
     DittoSetTtlByPatternResult,
     DittoStatsResult,
+    DittoWatchEvent,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "DittoSetResult",
     "DittoSetTtlByPatternResult",
     "DittoStatsResult",
+    "DittoWatchEvent",
 ]

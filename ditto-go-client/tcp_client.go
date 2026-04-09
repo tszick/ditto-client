@@ -332,6 +332,88 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 	}
 }
 
+func (c *TCPClient) Watch(key string, namespace ...string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return err
+	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return err
+	}
+	if err := validateCoreInputs(c.strictMode, "watch", key, ns); err != nil {
+		return err
+	}
+	resp, err := c.sendLocked(encodeWatch(key, ns))
+	if err != nil {
+		return err
+	}
+	switch resp.kind {
+	case respWatching:
+		return nil
+	case respError:
+		return &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return fmt.Errorf("unexpected response")
+	}
+}
+
+func (c *TCPClient) Unwatch(key string, namespace ...string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return err
+	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return err
+	}
+	if err := validateCoreInputs(c.strictMode, "unwatch", key, ns); err != nil {
+		return err
+	}
+	resp, err := c.sendLocked(encodeUnwatch(key, ns))
+	if err != nil {
+		return err
+	}
+	switch resp.kind {
+	case respUnwatched:
+		return nil
+	case respError:
+		return &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return fmt.Errorf("unexpected response")
+	}
+}
+
+func (c *TCPClient) WaitWatchEvent() (*WatchEventResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return nil, err
+	}
+	resp, err := c.readResponseLocked()
+	if err != nil {
+		return nil, err
+	}
+	switch resp.kind {
+	case respWatchEvent:
+		value := resp.value
+		if !resp.hasValue {
+			value = nil
+		}
+		return &WatchEventResult{
+			Key:     resp.key,
+			Value:   value,
+			Version: resp.version,
+		}, nil
+	case respError:
+		return nil, &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return nil, fmt.Errorf("unexpected response")
+	}
+}
+
 func normalizeNamespace(namespace ...string) *string {
 	ns, _ := normalizedNamespaceStrict(false, namespace...)
 	return ns

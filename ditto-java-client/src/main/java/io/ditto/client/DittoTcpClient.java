@@ -236,6 +236,52 @@ public class DittoTcpClient implements Closeable {
         };
     }
 
+    /** Subscribe to updates on a key. */
+    public synchronized void watch(String key) throws IOException {
+        watch(key, null);
+    }
+
+    public synchronized void watch(String key, String namespace) throws IOException {
+        validateCoreInputs("watch", key, namespace);
+        sendFrame(encodeWatch(key, namespace));
+        Response resp = readResponse();
+        switch (resp.type) {
+            case WATCHING -> {
+                return;
+            }
+            case ERROR -> throw new DittoException(resp.errorCode, resp.message);
+            default -> throw new IOException("Unexpected response: " + resp.type);
+        }
+    }
+
+    /** Cancel a key subscription. */
+    public synchronized void unwatch(String key) throws IOException {
+        unwatch(key, null);
+    }
+
+    public synchronized void unwatch(String key, String namespace) throws IOException {
+        validateCoreInputs("unwatch", key, namespace);
+        sendFrame(encodeUnwatch(key, namespace));
+        Response resp = readResponse();
+        switch (resp.type) {
+            case UNWATCHED -> {
+                return;
+            }
+            case ERROR -> throw new DittoException(resp.errorCode, resp.message);
+            default -> throw new IOException("Unexpected response: " + resp.type);
+        }
+    }
+
+    /** Block until the next watch event frame arrives. */
+    public synchronized DittoWatchEvent waitForWatchEvent() throws IOException {
+        Response resp = readResponse();
+        return switch (resp.type) {
+            case WATCH_EVENT -> new DittoWatchEvent(resp.key, resp.hasValue ? resp.value : null, resp.version);
+            case ERROR -> throw new DittoException(resp.errorCode, resp.message);
+            default -> throw new IOException("Unexpected response: " + resp.type);
+        };
+    }
+
     // ── Bincode encoding ──────────────────────────────────────────────────────
 
     /** Variant 0: Get { key } */
@@ -297,6 +343,32 @@ public class DittoTcpClient implements Closeable {
         buf.putInt(4);
         buf.putLong(tb.length);
         buf.put(tb);
+        return frame(buf.array());
+    }
+
+    /** Variant 5: Watch { key } */
+    private byte[] encodeWatch(String key, String namespace) {
+        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
+        byte[]     ns  = namespaceBytes(namespace);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(5);
+        buf.putLong(kb.length);
+        buf.put(kb);
+        putOptionalString(buf, ns);
+        return frame(buf.array());
+    }
+
+    /** Variant 6: Unwatch { key } */
+    private byte[] encodeUnwatch(String key, String namespace) {
+        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
+        byte[]     ns  = namespaceBytes(namespace);
+        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
+        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(6);
+        buf.putLong(kb.length);
+        buf.put(kb);
+        putOptionalString(buf, ns);
         return frame(buf.array());
     }
 
@@ -412,12 +484,14 @@ public class DittoTcpClient implements Closeable {
     // ── Bincode decoding ──────────────────────────────────────────────────────
 
     private enum ResponseType {
-        VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, PATTERN_DELETED, PATTERN_TTL_UPDATED
+        VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, WATCHING, UNWATCHED, WATCH_EVENT, PATTERN_DELETED, PATTERN_TTL_UPDATED
     }
 
     private static final class Response {
         ResponseType   type;
+        String         key;
         byte[]         value;
+        boolean        hasValue;
         long           version;
         DittoErrorCode errorCode;
         String         message;
@@ -455,6 +529,23 @@ public class DittoTcpClient implements Closeable {
                 r.errorCode = DittoErrorCode.fromIndex(codeIdx);
                 r.message   = new String(msgBytes, StandardCharsets.UTF_8);
                 r.type      = ResponseType.ERROR;
+            }
+            case 7 -> r.type = ResponseType.WATCHING;
+            case 8 -> r.type = ResponseType.UNWATCHED;
+            case 9 -> { // WatchEvent { key, value: Option<Bytes>, version }
+                long keyLen = buf.getLong();
+                byte[] keyBytes = new byte[(int) keyLen];
+                buf.get(keyBytes);
+                r.key = new String(keyBytes, StandardCharsets.UTF_8);
+                byte hasValue = buf.get();
+                r.hasValue = hasValue == 1;
+                if (r.hasValue) {
+                    long valLen = buf.getLong();
+                    r.value = new byte[(int) valLen];
+                    buf.get(r.value);
+                }
+                r.version = buf.getLong();
+                r.type = ResponseType.WATCH_EVENT;
             }
             case 10 -> { // PatternDeleted { deleted }
                 r.count = buf.getLong();

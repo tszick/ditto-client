@@ -31,6 +31,14 @@ class DittoSetTtlByPatternResult:
     updated: int
 
 
+@dataclasses.dataclass(frozen=True)
+class DittoWatchEvent:
+    """Returned by wait_watch_event(). value is None when the key was deleted."""
+    key: str
+    value: bytes | None
+    version: int
+
+
 @dataclasses.dataclass
 class DittoStatsResult:
     """Returned by stats() (HTTP client only)."""

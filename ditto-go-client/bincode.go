@@ -28,6 +28,7 @@ type tcpResponse struct {
 	kind    responseKind
 	key     string
 	value   []byte
+	hasValue bool
 	version uint64
 	code    string
 	message string
@@ -103,6 +104,22 @@ func encodeDeleteByPattern(pattern string, namespace *string) []byte {
 	return frame(b.Bytes())
 }
 
+func encodeWatch(key string, namespace *string) []byte {
+	var b bytes.Buffer
+	_ = binary.Write(&b, binary.LittleEndian, uint32(5))
+	writeString(&b, key)
+	writeOptionalString(&b, namespace)
+	return frame(b.Bytes())
+}
+
+func encodeUnwatch(key string, namespace *string) []byte {
+	var b bytes.Buffer
+	_ = binary.Write(&b, binary.LittleEndian, uint32(6))
+	writeString(&b, key)
+	writeOptionalString(&b, namespace)
+	return frame(b.Bytes())
+}
+
 func encodeSetTTLByPattern(pattern string, ttlSecs *uint64, namespace *string) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(8))
@@ -170,6 +187,25 @@ func readBytes(payload []byte, off *int) ([]byte, error) {
 	return b, nil
 }
 
+func readOptionalBytes(payload []byte, off *int) ([]byte, bool, error) {
+	if len(payload) < *off+1 {
+		return nil, false, fmt.Errorf("short payload reading option discriminant")
+	}
+	tag := payload[*off]
+	*off += 1
+	if tag == 0 {
+		return nil, false, nil
+	}
+	if tag != 1 {
+		return nil, false, fmt.Errorf("invalid option tag: %d", tag)
+	}
+	b, err := readBytes(payload, off)
+	if err != nil {
+		return nil, false, err
+	}
+	return b, true, nil
+}
+
 func decodeResponse(payload []byte) (*tcpResponse, error) {
 	off := 0
 	variant, err := readU32LE(payload, &off)
@@ -220,6 +256,24 @@ func decodeResponse(payload []byte) (*tcpResponse, error) {
 			code = codes[codeIdx]
 		}
 		return &tcpResponse{kind: respError, code: code, message: msg}, nil
+	case 7:
+		return &tcpResponse{kind: respWatching}, nil
+	case 8:
+		return &tcpResponse{kind: respUnwatched}, nil
+	case 9:
+		key, err := readString(payload, &off)
+		if err != nil {
+			return nil, err
+		}
+		val, hasValue, err := readOptionalBytes(payload, &off)
+		if err != nil {
+			return nil, err
+		}
+		ver, err := readU64LE(payload, &off)
+		if err != nil {
+			return nil, err
+		}
+		return &tcpResponse{kind: respWatchEvent, key: key, value: val, hasValue: hasValue, version: ver}, nil
 	case 10:
 		deleted, err := readU64LE(payload, &off)
 		if err != nil {

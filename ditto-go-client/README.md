@@ -5,7 +5,7 @@ Go client library for Ditto (`dittod`) with HTTP and TCP clients.
 ## Features
 
 - HTTP client (port 7778): `Ping`, `Get`, `Set`, `Delete`, `Stats`, pattern ops
-- TCP client (port 7777): `Ping`, `Get`, `Set`, `Delete`, pattern ops, optional auth token
+- TCP client (port 7777): `Ping`, `Get`, `Set`, `Delete`, pattern ops, `Watch`/`Unwatch`, optional auth token
 - Namespace-aware operations on both protocols
 - No dependency on `ditto-mgmt`
 
