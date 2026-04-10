@@ -10,6 +10,7 @@ from __future__ import annotations
 import socket
 import struct
 import threading
+import errno
 
 from .bincode import (
     ClientResponse,
@@ -262,8 +263,11 @@ class DittoTcpClient:
             return
         try:
             self._sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+        except OSError as exc:
+            # It's normal to hit these when the peer already closed or the
+            # socket is no longer connected while we are shutting down.
+            if exc.errno not in (errno.ENOTCONN, errno.EBADF, errno.EINVAL):
+                raise
         self._sock.close()
         self._sock = None
 
