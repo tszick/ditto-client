@@ -234,6 +234,16 @@ Pass condition:
   - runs Go test sanity before release tagging.
 - See details in `docs/client-release-guide.md`.
 
+## Coverage reporting (Phase A)
+
+- Workflow: `.github/workflows/coverage-report.yml`
+- Purpose: generate multi-language coverage reports on PR/push/manual runs without coverage-gate failure yet.
+- Artifacts:
+  - Node.js coverage output (`coverage-node.txt`),
+  - Go coverage (`coverage.out`, `coverage-go.txt`),
+  - Python coverage (`.coverage`, `coverage.xml`, `coverage-python.txt`),
+  - Java JaCoCo XML/HTML report.
+
 ## Compatibility expectations
 
 When introducing protocol-level changes:
@@ -278,3 +288,6 @@ When introducing protocol-level changes:
     - added manual release dry-run workflow (`.github/workflows/release-dry-run.yml`),
     - added release planning script (`scripts/release-dry-run.sh`),
     - added release guide (`docs/client-release-guide.md`).
+  - Sprint 5 / Phase A kickoff:
+    - added coverage-report workflow (`.github/workflows/coverage-report.yml`),
+    - enabled Java JaCoCo report generation in Gradle (`test` + `jacocoTestReport`).

@@ -1,8 +1,9 @@
-﻿plugins {
+plugins {
     `java-library`
+    jacoco
 }
 
-group   = "io.ditto"
+group = "io.ditto"
 version = "1.0.0"
 
 java {
@@ -25,6 +26,15 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
 }
 
 // Produce a plain JAR without a version suffix so consumers can reference it
