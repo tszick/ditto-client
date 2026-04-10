@@ -112,18 +112,22 @@ func parseHTTPError(status int, body []byte) error {
 		return nil
 	}
 	msg := string(body)
+	code := httpStatusToCode(status)
 	var payload struct {
 		Error   string `json:"error"`
 		Message string `json:"message"`
 	}
 	if json.Unmarshal(body, &payload) == nil {
+		if payload.Error != "" {
+			code = payload.Error
+		}
 		if payload.Message != "" {
 			msg = payload.Message
 		} else if payload.Error != "" {
 			msg = payload.Error
 		}
 	}
-	return &DittoError{Code: httpStatusToCode(status), Message: msg}
+	return &DittoError{Code: code, Message: msg}
 }
 
 func (c *HTTPClient) Ping() (bool, error) {
@@ -307,7 +311,7 @@ func namespaceHeader(namespace ...string) map[string]string {
 	if len(namespace) == 0 {
 		return nil
 	}
-	ns := namespace[0]
+	ns := strings.TrimSpace(namespace[0])
 	if ns == "" {
 		return nil
 	}
@@ -318,5 +322,9 @@ func namespaceHeaderPtr(namespace *string) map[string]string {
 	if namespace == nil {
 		return nil
 	}
-	return map[string]string{"X-Ditto-Namespace": *namespace}
+	ns := strings.TrimSpace(*namespace)
+	if ns == "" {
+		return nil
+	}
+	return map[string]string{"X-Ditto-Namespace": ns}
 }

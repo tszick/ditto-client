@@ -247,3 +247,15 @@ When introducing protocol-level changes:
   - reconnect regression coverage in Java/Python/Go,
   - client README consistency pass,
   - optional strict docker watch assertion mode (`DITTO_STRICT_WATCH_ASSERT`) with best-effort default.
+
+- Completed (2026-04-10):
+  - dependency pass:
+    - `ditto-cache` workspace dependencies verified up-to-date (`cargo outdated -R`),
+    - Node client dev dependency refresh: `@types/node` -> `25.6.0`,
+    - Java client dependency verified current: `jackson-databind` latest `2.21.2`,
+    - Python/Go clients verified as stdlib-only/no third-party runtime deps.
+  - client parity hardening:
+    - Go HTTP error mapping now prefers server payload error code (`error`) over coarse HTTP status fallback,
+    - Go namespace header handling now trims whitespace and suppresses blank namespace headers consistently.
+  - parity regression coverage:
+    - Go tests added for payload-priority error mapping and namespace header trimming behavior.

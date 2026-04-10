@@ -8,6 +8,7 @@ Go client library for Ditto (`dittod`) with HTTP and TCP clients.
 - TCP client (port 7777): `Ping`, `Get`, `Set`, `Delete`, pattern ops, `Watch`/`Unwatch`, `WaitWatchEvent`, optional auth token
 - Namespace-aware operations on both protocols
 - Optional one-shot reconnect retry on TCP via `AutoReconnect: true`
+- HTTP errors prefer server payload codes (for example `RateLimited`, `CircuitOpen`, `NamespaceQuotaExceeded`) with status fallback
 - No dependency on `ditto-mgmt`
 
 ## Quick usage
@@ -52,6 +53,7 @@ _, _ = tcp.Get("k", "tenant-acme")
 ```
 
 For `Get/Delete/DeleteByPattern/SetTtlByPattern`, the namespace is passed as an optional variadic argument.
+Whitespace-only namespace values are treated as omitted (header not sent).
 
 ## Tests
 
