@@ -114,3 +114,121 @@ jobs:
           path: |
             ditto-java-client/build/reports/jacoco/test/jacocoTestReport.xml
             ditto-java-client/build/reports/jacoco/test/html/**
+
+  nodejs-no-regression:
+    name: Node.js Coverage No Regression (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [nodejs]
+    defaults:
+      run:
+        working-directory: ditto-nodejs-client
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compute current branch Node coverage line%
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          node --test --experimental-test-coverage tests/*.test.mjs > coverage-current.txt
+          current_line_pct=$(grep -E "all files" coverage-current.txt | sed -E 's/.*all files *\| *([0-9.]+).*/\1/' | tail -n1)
+          if [ -z "${current_line_pct}" ]; then
+            echo "failed to parse current node coverage"
+            exit 1
+          fi
+          echo "current_line_pct=${current_line_pct}" >> "$GITHUB_ENV"
+      - name: Compute base branch Node coverage line%
+        run: |
+          set -euo pipefail
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          git worktree add ../_base_node "origin/${{ github.base_ref }}"
+          pushd ../_base_node/ditto-nodejs-client >/dev/null
+          npm ci
+          npm run build
+          node --test --experimental-test-coverage tests/*.test.mjs > coverage-base.txt
+          base_line_pct=$(grep -E "all files" coverage-base.txt | sed -E 's/.*all files *\| *([0-9.]+).*/\1/' | tail -n1)
+          popd >/dev/null
+          git worktree remove --force ../_base_node
+          if [ -z "${base_line_pct}" ]; then
+            echo "failed to parse base node coverage"
+            exit 1
+          fi
+          echo "base_line_pct=${base_line_pct}" >> "$GITHUB_ENV"
+      - name: Compare Node coverage against base
+        run: |
+          set -euo pipefail
+          echo "Node coverage line% current=${current_line_pct} base=${base_line_pct}"
+          {
+            echo "## Node.js Coverage No Regression"
+            echo ""
+            echo "- current line%: ${current_line_pct}"
+            echo "- base line%: ${base_line_pct}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          awk -v c="${current_line_pct}" -v b="${base_line_pct}" 'BEGIN { exit (c+0 < b+0) ? 1 : 0 }' || {
+            echo "Node.js coverage regressed (current=${current_line_pct}, base=${base_line_pct})" >&2
+            exit 1
+          }
+
+  go-no-regression:
+    name: Go Coverage No Regression (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [go]
+    defaults:
+      run:
+        working-directory: ditto-go-client
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Compute current branch Go coverage statements%
+        run: |
+          set -euo pipefail
+          go test ./... -coverprofile=coverage-current.out
+          current_stmt_pct=$(go tool cover -func=coverage-current.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          if [ -z "${current_stmt_pct}" ]; then
+            echo "failed to parse current go coverage"
+            exit 1
+          fi
+          echo "current_stmt_pct=${current_stmt_pct}" >> "$GITHUB_ENV"
+      - name: Compute base branch Go coverage statements%
+        run: |
+          set -euo pipefail
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          git worktree add ../_base_go "origin/${{ github.base_ref }}"
+          pushd ../_base_go/ditto-go-client >/dev/null
+          go test ./... -coverprofile=coverage-base.out
+          base_stmt_pct=$(go tool cover -func=coverage-base.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          popd >/dev/null
+          git worktree remove --force ../_base_go
+          if [ -z "${base_stmt_pct}" ]; then
+            echo "failed to parse base go coverage"
+            exit 1
+          fi
+          echo "base_stmt_pct=${base_stmt_pct}" >> "$GITHUB_ENV"
+      - name: Compare Go coverage against base
+        run: |
+          set -euo pipefail
+          echo "Go coverage statements% current=${current_stmt_pct} base=${base_stmt_pct}"
+          {
+            echo "## Go Coverage No Regression"
+            echo ""
+            echo "- current statements%: ${current_stmt_pct}"
+            echo "- base statements%: ${base_stmt_pct}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          awk -v c="${current_stmt_pct}" -v b="${base_stmt_pct}" 'BEGIN { exit (c+0 < b+0) ? 1 : 0 }' || {
+            echo "Go coverage regressed (current=${current_stmt_pct}, base=${base_stmt_pct})" >&2
+            exit 1
+          }

@@ -243,6 +243,9 @@ Pass condition:
   - Go coverage (`coverage.out`, `coverage-go.txt`),
   - Python coverage (`.coverage`, `coverage.xml`, `coverage-python.txt`),
   - Java JaCoCo XML/HTML report.
+- PR no-regression checks (Phase C entry):
+  - Node.js line coverage compared against base branch,
+  - Go statement coverage compared against base branch.
 
 ## Compatibility expectations
 

@@ -21,4 +21,20 @@ class DittoStrictPatternValidationSmokeTest {
         DittoTcpClient tcp = new DittoTcpClient("127.0.0.1", 1, null, true, false);
         assertThrows(IllegalArgumentException.class, () -> tcp.deleteByPattern("ok:*", "   "));
     }
+
+    @Test
+    void httpStrictModeRejectsNamespaceWithDoubleColonForPatternOpsBeforeNetwork() {
+        DittoHttpClient http = new DittoHttpClient.Builder()
+                .host("127.0.0.1")
+                .port(1)
+                .strictMode(true)
+                .build();
+        assertThrows(IllegalArgumentException.class, () -> http.setTtlByPattern("tenant:*", 60, "alpha::beta"));
+    }
+
+    @Test
+    void tcpStrictModeRejectsNamespaceWithDoubleColonForWatchBeforeNetwork() {
+        DittoTcpClient tcp = new DittoTcpClient("127.0.0.1", 1, null, true, false);
+        assertThrows(IllegalArgumentException.class, () -> tcp.watch("watch:key", "bad::ns"));
+    }
 }

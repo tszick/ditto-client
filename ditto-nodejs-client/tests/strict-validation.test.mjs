@@ -13,6 +13,10 @@ test('http strict mode rejects invalid pattern inputs', async () => {
     client.setTtlByPattern('ok:*', 60, '   '),
     /Invalid setTtlByPattern request: namespace must not be blank when provided/,
   );
+  await assert.rejects(
+    client.deleteByPattern('tenant:*', 'alpha::beta'),
+    /Invalid deleteByPattern request: namespace must not contain '::'/,
+  );
 });
 
 test('tcp strict mode validates watch and pattern inputs before network io', async () => {
@@ -24,5 +28,9 @@ test('tcp strict mode validates watch and pattern inputs before network io', asy
   await assert.rejects(
     client.deleteByPattern('bad pattern*'),
     /Invalid deleteByPattern request: pattern contains unsupported characters/,
+  );
+  await assert.rejects(
+    client.watch('watch:key', () => {}, 'bad::ns'),
+    /Invalid watch request: namespace must not contain '::'/,
   );
 });
