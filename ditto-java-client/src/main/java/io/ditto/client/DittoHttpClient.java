@@ -97,6 +97,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
     }
 
     public DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException, InterruptedException {
+        validatePatternInputs("deleteByPattern", pattern, namespace);
         String body = mapper.writeValueAsString(Map.of("pattern", pattern));
         HttpRequest req = requestBuilder("/keys/delete-by-pattern", namespace)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -120,6 +121,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     public DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
             throws IOException, InterruptedException {
+        validatePatternInputs("setTtlByPattern", pattern, namespace);
         String body = ttlSecs > 0
                 ? mapper.writeValueAsString(Map.of("pattern", pattern, "ttl_secs", ttlSecs))
                 : mapper.writeValueAsString(Map.of("pattern", pattern));

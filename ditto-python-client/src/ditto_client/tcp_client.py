@@ -32,7 +32,7 @@ from .types import (
     DittoSetTtlByPatternResult,
     DittoWatchEvent,
 )
-from .validation import validate_core_inputs
+from .validation import validate_core_inputs, validate_pattern_inputs
 
 
 class DittoTcpClient:
@@ -159,6 +159,7 @@ class DittoTcpClient:
 
     def delete_by_pattern(self, pattern: str, namespace: str | None = None) -> DittoDeleteByPatternResult:
         """Delete all keys matching a glob-style pattern ('*' wildcard)."""
+        validate_pattern_inputs(self._strict_mode, "delete_by_pattern", pattern, namespace)
         resp = self._send(encode_delete_by_pattern(pattern, namespace))
         if resp.type == "PatternDeleted":
             return DittoDeleteByPatternResult(deleted=resp.deleted)  # type: ignore[union-attr]
@@ -176,6 +177,7 @@ class DittoTcpClient:
         Update TTL for all keys matching a glob-style pattern ('*' wildcard).
         ``ttl_secs <= 0`` removes TTL from matched keys.
         """
+        validate_pattern_inputs(self._strict_mode, "set_ttl_by_pattern", pattern, namespace)
         resp = self._send(encode_set_ttl_by_pattern(pattern, ttl_secs, namespace))
         if resp.type == "PatternTtlUpdated":
             return DittoSetTtlByPatternResult(updated=resp.updated)  # type: ignore[union-attr]

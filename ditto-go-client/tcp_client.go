@@ -318,7 +318,14 @@ func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*Delet
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, normalizeNamespace(namespace...)))
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePatternInputs(c.strictMode, "deleteByPattern", pattern, ns); err != nil {
+		return nil, err
+	}
+	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, ns))
 	if err != nil {
 		return nil, err
 	}
@@ -338,11 +345,18 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePatternInputs(c.strictMode, "setTtlByPattern", pattern, ns); err != nil {
+		return nil, err
+	}
 	var ttl *uint64
 	if ttlSecs > 0 {
 		ttl = &ttlSecs
 	}
-	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, normalizeNamespace(namespace...)))
+	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, ns))
 	if err != nil {
 		return nil, err
 	}

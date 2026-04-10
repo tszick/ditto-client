@@ -210,6 +210,7 @@ public class DittoTcpClient implements Closeable {
     }
 
     public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException {
+        validatePatternInputs("deleteByPattern", pattern, namespace);
         Response resp = sendAndRead(encodeDeleteByPattern(pattern, namespace));
         return switch (resp.type) {
             case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
@@ -229,6 +230,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
             throws IOException {
+        validatePatternInputs("setTtlByPattern", pattern, namespace);
         Response resp = sendAndRead(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
         return switch (resp.type) {
             case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
@@ -431,10 +433,46 @@ public class DittoTcpClient implements Closeable {
         }
     }
 
+    private void validatePatternInputs(String op, String pattern, String namespace) {
+        if (!strictMode) return;
+        if (pattern == null || pattern.trim().isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: pattern must not be empty.");
+        }
+        if (!isStrictPattern(pattern.trim())) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]"
+            );
+        }
+        if (namespace == null) return;
+        String ns = namespace.trim();
+        if (ns.isEmpty()) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not be blank when provided.");
+        }
+        if (ns.contains("::")) {
+            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not contain '::'.");
+        }
+        if (!isStrictToken(ns)) {
+            throw new IllegalArgumentException(
+                    "Invalid " + op + " request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            );
+        }
+    }
+
     private static boolean isStrictToken(String value) {
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':') {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isStrictPattern(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':' || c == '*') {
                 continue;
             }
             return false;

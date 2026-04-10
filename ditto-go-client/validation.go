@@ -32,9 +32,46 @@ func validateCoreInputs(strict bool, op string, key string, namespace *string) e
 	return nil
 }
 
+func validatePatternInputs(strict bool, op string, pattern string, namespace *string) error {
+	if !strict {
+		return nil
+	}
+	pt := strings.TrimSpace(pattern)
+	if pt == "" {
+		return fmt.Errorf("invalid %s request: pattern must not be empty", op)
+	}
+	if !isStrictPattern(pt) {
+		return fmt.Errorf("invalid %s request: pattern contains unsupported characters; allowed: [A-Za-z0-9._:-*]", op)
+	}
+	if namespace == nil {
+		return nil
+	}
+	ns := strings.TrimSpace(*namespace)
+	if ns == "" {
+		return fmt.Errorf("invalid %s request: namespace must not be blank when provided", op)
+	}
+	if strings.Contains(ns, "::") {
+		return fmt.Errorf("invalid %s request: namespace must not contain '::'", op)
+	}
+	if !isStrictToken(ns) {
+		return fmt.Errorf("invalid %s request: namespace contains unsupported characters; allowed: [A-Za-z0-9._:-]", op)
+	}
+	return nil
+}
+
 func isStrictToken(s string) bool {
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.' || r == ':' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isStrictPattern(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.' || r == ':' || r == '*' {
 			continue
 		}
 		return false

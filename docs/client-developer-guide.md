@@ -63,9 +63,10 @@ Shared behavior target:
 
 ### Strict mode semantics
 
-- Each SDK has an opt-in strict mode for `get/set/delete`.
+- Each SDK has an opt-in strict mode for `get/set/delete`, pattern operations, and TCP watch key inputs.
 - When enabled:
   - `key` must be non-empty and match `[A-Za-z0-9._:-]+`,
+  - `pattern` must be non-empty and match `[A-Za-z0-9._:-*]+`,
   - `namespace` (if provided) must be non-empty, must not contain `::`, and must match `[A-Za-z0-9._:-]+`.
 - Strict mode validation happens client-side before network I/O.
 
@@ -223,6 +224,16 @@ docker compose -f clients/python/docker-compose.yml down
 Pass condition:
 - test containers exit with code `0`.
 
+## Release dry-run
+
+- Workflow: `.github/workflows/release-dry-run.yml` (manual trigger with `release_version` input).
+- Local helper: `scripts/release-dry-run.sh <release-version>`.
+- The dry-run flow:
+  - generates changelog preview (`release-dry-run-changelog.md`),
+  - validates package/jar build steps across Node/Python/Java,
+  - runs Go test sanity before release tagging.
+- See details in `docs/client-release-guide.md`.
+
 ## Compatibility expectations
 
 When introducing protocol-level changes:
@@ -259,3 +270,11 @@ When introducing protocol-level changes:
     - Go namespace header handling now trims whitespace and suppresses blank namespace headers consistently.
   - parity regression coverage:
     - Go tests added for payload-priority error mapping and namespace header trimming behavior.
+  - strict-mode parity follow-up:
+    - aligned strict validation across Node/Java/Python/Go for `deleteByPattern` and `setTtlByPattern`,
+    - aligned TCP watch/unwatch strict key+namespace validation behavior,
+    - added strict validation regression tests in Node/Python/Java/Go.
+  - release automation prep:
+    - added manual release dry-run workflow (`.github/workflows/release-dry-run.yml`),
+    - added release planning script (`scripts/release-dry-run.sh`),
+    - added release guide (`docs/client-release-guide.md`).

@@ -75,6 +75,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
 
   /** Delete all keys matching a glob-style pattern ('*' wildcard). */
   async deleteByPattern(pattern: string, namespace?: string): Promise<DittoDeleteByPatternResult> {
+    this.validatePatternInputs('deleteByPattern', pattern, namespace);
     const resp = await this.request('/keys/delete-by-pattern', {
       method: 'POST',
       headers: {
@@ -93,6 +94,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
    * ttlSecs <= 0 or omitted removes TTL from matched keys.
    */
   async setTtlByPattern(pattern: string, ttlSecs?: number, namespace?: string): Promise<DittoSetTtlByPatternResult> {
+    this.validatePatternInputs('setTtlByPattern', pattern, namespace);
     const payload: { pattern: string; ttl_secs?: number } = { pattern };
     if (ttlSecs !== undefined && ttlSecs > 0) {
       payload.ttl_secs = ttlSecs;

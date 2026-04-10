@@ -312,9 +312,37 @@ export class DittoHttpClientBase {
       );
     }
   }
+
+  /** @internal */
+  protected validatePatternInputs(op: 'deleteByPattern' | 'setTtlByPattern', pattern: string, namespace?: string): void {
+    if (!this.strictMode) return;
+    const patternTrimmed = pattern.trim();
+    if (patternTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: pattern must not be empty.`);
+    }
+    if (!STRICT_PATTERN_RE.test(patternTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]`,
+      );
+    }
+    if (namespace === undefined) return;
+    const nsTrimmed = namespace.trim();
+    if (nsTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
+    }
+    if (nsTrimmed.includes('::')) {
+      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
+    }
+    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+  }
 }
 
 const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
+const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
 
 function isKnownErrorCode(code: DittoErrorCode): boolean {
   return [

@@ -257,8 +257,15 @@ func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
 }
 
 func (c *HTTPClient) DeleteByPattern(pattern string, namespace ...string) (*DeleteByPatternResult, error) {
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePatternInputs(c.strictMode, "deleteByPattern", pattern, ns); err != nil {
+		return nil, err
+	}
 	payload, _ := json.Marshal(map[string]string{"pattern": pattern})
-	b, status, err := c.request(http.MethodPost, "/keys/delete-by-pattern", payload, "application/json", namespaceHeader(namespace...))
+	b, status, err := c.request(http.MethodPost, "/keys/delete-by-pattern", payload, "application/json", namespaceHeaderPtr(ns))
 	if err != nil {
 		return nil, err
 	}
@@ -273,12 +280,19 @@ func (c *HTTPClient) DeleteByPattern(pattern string, namespace ...string) (*Dele
 }
 
 func (c *HTTPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ...string) (*SetTtlByPatternResult, error) {
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePatternInputs(c.strictMode, "setTtlByPattern", pattern, ns); err != nil {
+		return nil, err
+	}
 	m := map[string]any{"pattern": pattern}
 	if ttlSecs > 0 {
 		m["ttl_secs"] = ttlSecs
 	}
 	payload, _ := json.Marshal(m)
-	b, status, err := c.request(http.MethodPost, "/keys/ttl-by-pattern", payload, "application/json", namespaceHeader(namespace...))
+	b, status, err := c.request(http.MethodPost, "/keys/ttl-by-pattern", payload, "application/json", namespaceHeaderPtr(ns))
 	if err != nil {
 		return nil, err
 	}

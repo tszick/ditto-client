@@ -14,7 +14,7 @@ from .types import (
     DittoSetTtlByPatternResult,
     DittoStatsResult,
 )
-from .validation import validate_core_inputs
+from .validation import validate_core_inputs, validate_pattern_inputs
 
 
 class DittoHttpClient(DittoHttpClientBase):
@@ -83,6 +83,7 @@ class DittoHttpClient(DittoHttpClientBase):
 
     def delete_by_pattern(self, pattern: str, namespace: str | None = None) -> DittoDeleteByPatternResult:
         """Delete all keys matching a glob-style pattern ('*' wildcard)."""
+        validate_pattern_inputs(self._strict_mode, "delete_by_pattern", pattern, namespace)
         payload = json.dumps({"pattern": pattern}).encode("utf-8")
         status, body = self._request(
             "/keys/delete-by-pattern",
@@ -105,6 +106,7 @@ class DittoHttpClient(DittoHttpClientBase):
         Update TTL for all keys matching a glob-style pattern ('*' wildcard).
         ``ttl_secs <= 0`` removes TTL from matched keys.
         """
+        validate_pattern_inputs(self._strict_mode, "set_ttl_by_pattern", pattern, namespace)
         payload_obj = {"pattern": pattern}
         if ttl_secs > 0:
             payload_obj["ttl_secs"] = ttl_secs

@@ -184,7 +184,7 @@ export class DittoTcpClient {
    * The returned `value` is a raw Buffer (the stored bytes, unchanged).
    */
   async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
-    this.validateCoreInputs('get', key, namespace);
+    this.validateCoreInputs('watch', key, namespace);
     const resp = await this.send(encodeGet(key, namespace));
     if (resp.type === 'NotFound') return null;
     if (resp.type === 'Value')    return { value: resp.value, version: resp.version };
@@ -227,6 +227,7 @@ export class DittoTcpClient {
    * Returns the number of deleted keys.
    */
   async deleteByPattern(pattern: string, namespace?: string): Promise<DittoDeleteByPatternResult> {
+    this.validatePatternInputs('deleteByPattern', pattern, namespace);
     const resp = await this.send(encodeDeleteByPattern(pattern, namespace));
     if (resp.type === 'PatternDeleted') return { deleted: resp.deleted };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
@@ -238,6 +239,7 @@ export class DittoTcpClient {
    * ttlSecs <= 0 or omitted removes TTL from matched keys.
    */
   async setTtlByPattern(pattern: string, ttlSecs?: number, namespace?: string): Promise<DittoSetTtlByPatternResult> {
+    this.validatePatternInputs('setTtlByPattern', pattern, namespace);
     const resp = await this.send(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
     if (resp.type === 'PatternTtlUpdated') return { updated: resp.updated };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
@@ -253,8 +255,9 @@ export class DittoTcpClient {
    *
    * The subscription is active until `unwatch(key)` is called or the client
    * is closed. After an auto-reconnect the subscription is re-registered.
-   */
+  */
   async watch(key: string, callback: (value: Buffer | null, version: number) => void, namespace?: string): Promise<void> {
+    this.validateCoreInputs('watch', key, namespace);
     this.watchCallbacks.set(key, callback);
     const resp = await this.send(encodeWatch(key, namespace));
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
@@ -265,6 +268,7 @@ export class DittoTcpClient {
    * Cancel the subscription for `key`. No-op if the key is not being watched.
    */
   async unwatch(key: string, namespace?: string): Promise<void> {
+    this.validateCoreInputs('get', key, namespace);
     this.watchCallbacks.delete(key);
     if (!this.socket) return; // already disconnected — nothing to send
     const resp = await this.send(encodeUnwatch(key, namespace));
@@ -514,7 +518,7 @@ export class DittoTcpClient {
     for (const w of queue) w.reject(err);
   }
 
-  private validateCoreInputs(op: 'get' | 'set' | 'delete', key: string, namespace?: string): void {
+  private validateCoreInputs(op: 'get' | 'set' | 'delete' | 'watch' | 'unwatch', key: string, namespace?: string): void {
     if (!this.strictMode) return;
     const keyTrimmed = key.trim();
     if (keyTrimmed.length === 0) {
@@ -539,6 +543,33 @@ export class DittoTcpClient {
       );
     }
   }
+
+  private validatePatternInputs(op: 'deleteByPattern' | 'setTtlByPattern', pattern: string, namespace?: string): void {
+    if (!this.strictMode) return;
+    const patternTrimmed = pattern.trim();
+    if (patternTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: pattern must not be empty.`);
+    }
+    if (!STRICT_PATTERN_RE.test(patternTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]`,
+      );
+    }
+    if (namespace === undefined) return;
+    const nsTrimmed = namespace.trim();
+    if (nsTrimmed.length === 0) {
+      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
+    }
+    if (nsTrimmed.includes('::')) {
+      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
+    }
+    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
+      throw new Error(
+        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
+      );
+    }
+  }
 }
 
 const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
+const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
