@@ -71,6 +71,8 @@ export interface DittoTcpClientOptions {
   baseBackoffMs?: number;
   /** Maximum reconnect backoff in milliseconds. Default: 30_000 */
   maxBackoffMs?: number;
+  /** TCP connect timeout in milliseconds. Default: 10000 */
+  connectTimeoutMs?: number;
   /** Socket inactivity timeout in milliseconds. Default: 10000 */
   requestTimeoutMs?: number;
   /** Maximum accepted response frame size in bytes. Default: 8 MiB */
@@ -96,6 +98,7 @@ export class DittoTcpClient {
   private readonly maxReconnectAttempts: number;
   private readonly baseBackoffMs:        number;
   private readonly maxBackoffMs:         number;
+  private readonly connectTimeoutMs:     number;
   private readonly requestTimeoutMs:     number;
   private readonly maxFrameBytes:        number;
   private readonly strictMode:           boolean;
@@ -133,6 +136,7 @@ export class DittoTcpClient {
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? 0;
     this.baseBackoffMs        = opts.baseBackoffMs        ?? 200;
     this.maxBackoffMs         = opts.maxBackoffMs         ?? 30_000;
+    this.connectTimeoutMs     = opts.connectTimeoutMs     ?? 10_000;
     this.requestTimeoutMs     = opts.requestTimeoutMs     ?? 10_000;
     this.maxFrameBytes        = opts.maxFrameBytes        ?? (8 * 1024 * 1024);
     this.strictMode           = opts.strictMode           ?? false;
@@ -424,10 +428,15 @@ export class DittoTcpClient {
     try {
       await new Promise<void>((resolve, reject) => {
         const sock = new net.Socket();
+        const connectTimer = setTimeout(() => {
+          sock.destroy(new Error(`Connect timeout after ${this.connectTimeoutMs}ms`));
+        }, this.connectTimeoutMs);
         sock.connect(this.port, this.host, () => {
+          clearTimeout(connectTimer);
           this.socket = sock;
           resolve();
         });
+        sock.once('close', () => clearTimeout(connectTimer));
         sock.on('data',  (chunk: Buffer) => this.onData(chunk));
         sock.on('error', (err: Error)    => this.onError(err));
         sock.on('close', ()              => this.onClose());

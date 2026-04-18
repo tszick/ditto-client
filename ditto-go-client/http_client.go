@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +21,8 @@ type HTTPClientOptions struct {
 	Username           string
 	Password           string
 	RejectUnauthorized bool
+	ConnectTimeout     time.Duration
+	RequestTimeout     time.Duration
 	Timeout            time.Duration
 	StrictMode         bool
 }
@@ -44,18 +47,32 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 	if opts.TLS {
 		scheme = "https"
 	}
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
+	connectTimeout := opts.ConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = opts.Timeout
 	}
-	tr := &http.Transport{}
+	if connectTimeout <= 0 {
+		connectTimeout = 10 * time.Second
+	}
+	requestTimeout := opts.RequestTimeout
+	if requestTimeout <= 0 {
+		requestTimeout = opts.Timeout
+	}
+	if requestTimeout <= 0 {
+		requestTimeout = 10 * time.Second
+	}
+	tr := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: connectTimeout,
+		}).DialContext,
+	}
 	if opts.TLS {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: !opts.RejectUnauthorized} //nolint:gosec
 	}
 	c := &HTTPClient{
 		baseURL: fmt.Sprintf("%s://%s:%d", scheme, host, port),
 		httpClient: &http.Client{
-			Timeout:   timeout,
+			Timeout:   requestTimeout,
 			Transport: tr,
 		},
 		strictMode: opts.StrictMode,

@@ -53,6 +53,7 @@ public abstract class DittoHttpClientBase {
     private final String     baseUrl;
     private final String     authHeader;
     private final HttpClient httpClient;
+    private final int requestTimeoutMs;
     protected final boolean strictMode;
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ public abstract class DittoHttpClientBase {
         String scheme  = b.tls ? "https" : "http";
         this.baseUrl   = scheme + "://" + b.host + ":" + b.port;
         this.strictMode = b.strictMode;
+        this.requestTimeoutMs = b.requestTimeoutMs;
 
         if (b.username != null && b.password != null) {
             String creds = b.username + ":" + b.password;
@@ -72,7 +74,7 @@ public abstract class DittoHttpClientBase {
 
         HttpClient.Builder httpBuilder = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(10));
+                .connectTimeout(Duration.ofMillis(Math.max(1, b.connectTimeoutMs)));
 
         if (b.tls && !b.rejectUnauthorized) {
             throw new IllegalArgumentException(
@@ -106,7 +108,7 @@ public abstract class DittoHttpClientBase {
     protected HttpRequest.Builder requestBuilder(String path) {
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(10));
+                .timeout(Duration.ofMillis(Math.max(1, this.requestTimeoutMs)));
         if (authHeader != null) b.header("Authorization", authHeader);
         return b;
     }
@@ -259,6 +261,8 @@ public abstract class DittoHttpClientBase {
         String  username;
         String  password;
         boolean strictMode = false;
+        int connectTimeoutMs = 10_000;
+        int requestTimeoutMs = 10_000;
 
         public B host(String host)   { this.host     = host;   return (B) this; }
         public B port(int port)      { this.port     = port;   return (B) this; }
@@ -268,6 +272,14 @@ public abstract class DittoHttpClientBase {
         public B username(String u)  { this.username = u;      return (B) this; }
         public B password(String p)  { this.password = p;      return (B) this; }
         public B strictMode(boolean strictMode) { this.strictMode = strictMode; return (B) this; }
+        public B connectTimeoutMs(int connectTimeoutMs) {
+            this.connectTimeoutMs = connectTimeoutMs > 0 ? connectTimeoutMs : 10_000;
+            return (B) this;
+        }
+        public B requestTimeoutMs(int requestTimeoutMs) {
+            this.requestTimeoutMs = requestTimeoutMs > 0 ? requestTimeoutMs : 10_000;
+            return (B) this;
+        }
 
         public abstract DittoHttpClient build();
     }

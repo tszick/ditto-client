@@ -42,6 +42,8 @@ public class DittoTcpClient implements Closeable {
     private final String authToken;
     private final boolean strictMode;
     private final boolean autoReconnect;
+    private final int connectTimeoutMs;
+    private final int readTimeoutMs;
 
     private Socket           socket;
     private DataInputStream  in;
@@ -66,11 +68,25 @@ public class DittoTcpClient implements Closeable {
     }
 
     public DittoTcpClient(String host, int port, String authToken, boolean strictMode, boolean autoReconnect) {
+        this(host, port, authToken, strictMode, autoReconnect, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
+    }
+
+    public DittoTcpClient(
+            String host,
+            int port,
+            String authToken,
+            boolean strictMode,
+            boolean autoReconnect,
+            int connectTimeoutMs,
+            int readTimeoutMs
+    ) {
         this.host = host;
         this.port = port;
         this.authToken = authToken;
         this.strictMode = strictMode;
         this.autoReconnect = autoReconnect;
+        this.connectTimeoutMs = connectTimeoutMs > 0 ? connectTimeoutMs : DEFAULT_CONNECT_TIMEOUT_MS;
+        this.readTimeoutMs = readTimeoutMs > 0 ? readTimeoutMs : DEFAULT_READ_TIMEOUT_MS;
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -81,9 +97,9 @@ public class DittoTcpClient implements Closeable {
             return;
         }
         socket = new Socket();
-        socket.connect(new java.net.InetSocketAddress(host, port), DEFAULT_CONNECT_TIMEOUT_MS);
+        socket.connect(new java.net.InetSocketAddress(host, port), connectTimeoutMs);
         socket.setTcpNoDelay(true);
-        socket.setSoTimeout(DEFAULT_READ_TIMEOUT_MS);
+        socket.setSoTimeout(readTimeoutMs);
         in  = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         out = new BufferedOutputStream(socket.getOutputStream());
 

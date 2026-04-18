@@ -13,6 +13,8 @@ type TCPClientOptions struct {
 	Host          string
 	Port          int
 	AuthToken     string
+	ConnectTimeout time.Duration
+	ReadTimeout    time.Duration
 	Timeout       time.Duration
 	MaxFrameBytes uint32
 	StrictMode    bool
@@ -23,7 +25,8 @@ type TCPClient struct {
 	host          string
 	port          int
 	authToken     string
-	timeout       time.Duration
+	connectTimeout time.Duration
+	readTimeout    time.Duration
 	maxFrameBytes uint32
 	strictMode    bool
 	autoReconnect bool
@@ -41,16 +44,26 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 	if port == 0 {
 		port = 7777
 	}
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
+	connectTimeout := opts.ConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = opts.Timeout
+	}
+	if connectTimeout <= 0 {
+		connectTimeout = 10 * time.Second
+	}
+	readTimeout := opts.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = opts.Timeout
+	}
+	if readTimeout <= 0 {
+		readTimeout = 10 * time.Second
 	}
 	maxFrame := opts.MaxFrameBytes
 	if maxFrame == 0 {
 		maxFrame = 8 * 1024 * 1024
 	}
 	return &TCPClient{
-		host: host, port: port, authToken: opts.AuthToken, timeout: timeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode, autoReconnect: opts.AutoReconnect,
+		host: host, port: port, authToken: opts.AuthToken, connectTimeout: connectTimeout, readTimeout: readTimeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode, autoReconnect: opts.AutoReconnect,
 	}
 }
 
@@ -60,7 +73,7 @@ func (c *TCPClient) Connect() error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.timeout)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.connectTimeout)
 	if err != nil {
 		return err
 	}
@@ -101,7 +114,7 @@ func (c *TCPClient) ensureConnectedLocked() error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.timeout)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.connectTimeout)
 	if err != nil {
 		return err
 	}
@@ -128,7 +141,7 @@ func (c *TCPClient) ensureConnectedLocked() error {
 }
 
 func (c *TCPClient) sendLocked(frame []byte) (*tcpResponse, error) {
-	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+	if err := c.conn.SetDeadline(time.Now().Add(c.readTimeout)); err != nil {
 		return nil, err
 	}
 	if _, err := c.conn.Write(frame); err != nil {
