@@ -146,4 +146,12 @@ cd ditto-client/ditto-go-client && go test ./...
 cd ditto-client/ditto-python-client && python -m unittest discover -s tests -v
 cd ditto-client/ditto-java-client && ./gradlew test --console=plain
 cd ditto-client/ditto-nodejs-client && npm run test:integration
+cd ditto-client && python contracts/validate_contracts.py
 ```
+
+## Cross-SDK contract specs
+
+Contract specs live in `contracts/` and define language-agnostic behavior
+expectations for parity runners. CI validates JSON structure with
+`contracts/validate_contracts.py`, and Go SDK currently executes the core
+suite via `ditto-go-client/contract_runner_test.go`.

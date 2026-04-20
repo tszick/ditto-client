@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "suite": "core-ops",
+  "description": "Language-agnostic contract spec for Ditto SDK parity.",
+  "cases": [
+    {
+      "id": "ping",
+      "operation": "ping",
+      "inputs": {},
+      "expect": {
+        "type": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "set-get-roundtrip",
+      "operation": "set_get",
+      "inputs": {
+        "key": "contract:key:1",
+        "value": "contract-value",
+        "ttl_secs": 60
+      },
+      "expect": {
+        "type": "value",
+        "value_equals": "contract-value"
+      }
+    },
+    {
+      "id": "delete-missing",
+      "operation": "delete",
+      "inputs": {
+        "key": "contract:missing:key"
+      },
+      "expect": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "pattern-delete",
+      "operation": "delete_by_pattern",
+      "inputs": {
+        "pattern": "contract:prefix:*"
+      },
+      "expect": {
+        "type": "count",
+        "min": 0
+      }
+    }
+  ]
+}
