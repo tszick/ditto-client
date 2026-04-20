@@ -277,11 +277,8 @@ export class DittoHttpClientBase {
     throw new DittoError(code, message);
   }
 
-  private mapHttpError(status: number, bodyCode?: string): DittoErrorCode {
-    if (bodyCode) {
-      const mapped = bodyCode as DittoErrorCode;
-      if (isKnownErrorCode(mapped)) return mapped;
-    }
+  private mapHttpError(status: number, bodyCode?: string): DittoErrorCode | string {
+    if (bodyCode && bodyCode.trim().length > 0) return bodyCode.trim();
     if (status === 429) return 'RateLimited';
     if (status === 503) return 'NodeInactive';
     if (status === 504) return 'WriteTimeout';
@@ -346,21 +343,6 @@ export class DittoHttpClientBase {
 
 const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
 const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
-
-function isKnownErrorCode(code: DittoErrorCode): boolean {
-  return [
-    'NodeInactive',
-    'NoQuorum',
-    'KeyNotFound',
-    'InternalError',
-    'WriteTimeout',
-    'ValueTooLarge',
-    'KeyLimitReached',
-    'RateLimited',
-    'CircuitOpen',
-    'AuthFailed',
-  ].includes(code);
-}
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

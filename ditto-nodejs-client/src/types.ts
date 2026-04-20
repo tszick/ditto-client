@@ -67,9 +67,9 @@ export type DittoErrorCode =
 
 /** Error thrown when the server returns an error response. */
 export class DittoError extends Error {
-  readonly code: DittoErrorCode;
+  readonly code: DittoErrorCode | string;
 
-  constructor(code: DittoErrorCode, message: string) {
+  constructor(code: DittoErrorCode | string, message: string) {
     super(message);
     this.name  = 'DittoError';
     this.code  = code;

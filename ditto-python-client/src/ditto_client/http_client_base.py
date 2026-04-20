@@ -111,19 +111,31 @@ class DittoHttpClientBase:
         if 200 <= status < 300:
             return
         message: str = body
+        body_error: str | None = None
         try:
             data: Any = json.loads(body)
             message = data.get("message") or data.get("error") or body
+            if isinstance(data.get("error"), str):
+                body_error = data.get("error")
         except (ValueError, AttributeError):
             pass  # Non-JSON body; fall back to raw string as the error message
-        if status == 503:
-            code: DittoErrorCode = DittoErrorCode.NODE_INACTIVE
-        elif status == 504:
-            code = DittoErrorCode.WRITE_TIMEOUT
-        elif status == 404:
-            code = DittoErrorCode.KEY_NOT_FOUND
+
+        if body_error:
+            try:
+                code: DittoErrorCode | str = DittoErrorCode(body_error)
+            except ValueError:
+                code = body_error
         else:
-            code = DittoErrorCode.INTERNAL_ERROR
+            if status == 503:
+                code = DittoErrorCode.NODE_INACTIVE
+            elif status == 504:
+                code = DittoErrorCode.WRITE_TIMEOUT
+            elif status == 404:
+                code = DittoErrorCode.KEY_NOT_FOUND
+            elif status == 429:
+                code = DittoErrorCode.RATE_LIMITED
+            else:
+                code = DittoErrorCode.INTERNAL_ERROR
         raise DittoError(code, message)
 
     @staticmethod

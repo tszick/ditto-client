@@ -127,6 +127,7 @@ Client impact:
 - server protocol supports namespace-aware operations (`namespace` field on TCP, `X-Ditto-Namespace` header on HTTP),
 - server may return newer error codes (for example `NamespaceQuotaExceeded`),
 - clients should handle unknown/new error codes gracefully.
+- SDKs preserve server payload error codes when present (including unknown/new values) for forward-compatible handling.
 
 ---
 

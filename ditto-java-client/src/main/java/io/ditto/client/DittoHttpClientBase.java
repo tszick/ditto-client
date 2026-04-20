@@ -142,17 +142,35 @@ public abstract class DittoHttpClientBase {
     protected void assertOk(HttpResponse<String> resp) throws IOException {
         if (resp.statusCode() >= 200 && resp.statusCode() < 300) return;
         String message = "HTTP " + resp.statusCode();
+        String rawCode = null;
         try {
             Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
             Object msg = body.get("message");
             if (msg == null) msg = body.get("error");
             if (msg != null) message = msg.toString();
+            Object err = body.get("error");
+            if (err != null) rawCode = err.toString();
         } catch (Exception ignored) {}
-        throw switch (resp.statusCode()) {
-            case 503 -> new DittoException(DittoErrorCode.NODE_INACTIVE,  message);
-            case 504 -> new DittoException(DittoErrorCode.WRITE_TIMEOUT,  message);
-            case 404 -> new DittoException(DittoErrorCode.KEY_NOT_FOUND,  message);
-            default  -> new DittoException(DittoErrorCode.INTERNAL_ERROR, message);
+        DittoErrorCode mapped = mapHttpError(resp.statusCode(), rawCode);
+        throw new DittoException(mapped, message, rawCode != null ? rawCode : mapped.name());
+    }
+
+    private static DittoErrorCode mapHttpError(int statusCode, String rawCode) {
+        if (rawCode != null && !rawCode.isBlank()) {
+            try {
+                return DittoErrorCode.valueOf(rawCode
+                        .replaceAll("([a-z])([A-Z])", "$1_$2")
+                        .toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                return DittoErrorCode.INTERNAL_ERROR;
+            }
+        }
+        return switch (statusCode) {
+            case 503 -> DittoErrorCode.NODE_INACTIVE;
+            case 504 -> DittoErrorCode.WRITE_TIMEOUT;
+            case 404 -> DittoErrorCode.KEY_NOT_FOUND;
+            case 429 -> DittoErrorCode.RATE_LIMITED;
+            default -> DittoErrorCode.INTERNAL_ERROR;
         };
     }
 

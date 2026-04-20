@@ -70,6 +70,12 @@ Shared behavior target:
   - `namespace` (if provided) must be non-empty, must not contain `::`, and must match `[A-Za-z0-9._:-]+`.
 - Strict mode validation happens client-side before network I/O.
 
+### Error code semantics
+
+- HTTP SDKs prefer the server payload `error` code over coarse HTTP-status fallback mapping.
+- Unknown/new server error codes are preserved as raw string values for forward compatibility.
+- Known runtime codes still map to SDK-native enum/typed constants where applicable.
+
 Examples of patterns:
 - `user:*`
 - `session:*:access`
