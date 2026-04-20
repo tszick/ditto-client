@@ -21,6 +21,8 @@ import java.util.Base64;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * DittoHttpClientBase – infrastructure for the generated {@link DittoHttpClient}.
@@ -76,19 +78,28 @@ public abstract class DittoHttpClientBase {
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofMillis(Math.max(1, b.connectTimeoutMs)));
 
-        if (b.tls && !b.rejectUnauthorized) {
-            throw new IllegalArgumentException(
-                    "rejectUnauthorized(false) is insecure and is no longer supported. "
-                            + "Use trustedCertPath(...) to trust a specific self-signed/server certificate."
-            );
-        }
-
-        if (b.tls && b.trustedCertPath != null && !b.trustedCertPath.isBlank()) {
-            try {
-                SSLContext sslContext = buildPinnedTlsContext(b.trustedCertPath);
-                httpBuilder.sslContext(sslContext);
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to initialize TLS context from trustedCertPath", e);
+        if (b.tls) {
+            if (b.devInsecureTls) {
+                try {
+                    httpBuilder.sslContext(buildInsecureTlsContext());
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to initialize insecure TLS context", e);
+                }
+            } else {
+                if (!b.rejectUnauthorized) {
+                    throw new IllegalArgumentException(
+                            "rejectUnauthorized(false) is insecure and is no longer supported. "
+                                    + "Use devInsecureTls(true) for explicit local-dev bypass or trustedCertPath(...) for pinned trust."
+                    );
+                }
+                if (b.trustedCertPath != null && !b.trustedCertPath.isBlank()) {
+                    try {
+                        SSLContext sslContext = buildPinnedTlsContext(b.trustedCertPath);
+                        httpBuilder.sslContext(sslContext);
+                    } catch (Exception e) {
+                        throw new IllegalStateException("Failed to initialize TLS context from trustedCertPath", e);
+                    }
+                }
             }
         }
 
@@ -245,6 +256,27 @@ public abstract class DittoHttpClientBase {
         return sslContext;
     }
 
+    /** Build an insecure SSL context that trusts all server certificates (dev-only). */
+    private static SSLContext buildInsecureTlsContext() throws Exception {
+        TrustManager[] trustAll = new TrustManager[]{
+                new X509TrustManager() {
+                    @Override
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                        return new java.security.cert.X509Certificate[0];
+                    }
+
+                    @Override
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+
+                    @Override
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                }
+        };
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(null, trustAll, new SecureRandom());
+        return sslContext;
+    }
+
     // ── Builder base ──────────────────────────────────────────────────────────
 
     /**
@@ -257,6 +289,7 @@ public abstract class DittoHttpClientBase {
         int     port     = 7778;
         boolean tls      = false;
         boolean rejectUnauthorized = true;
+        boolean devInsecureTls = false;
         String  trustedCertPath;
         String  username;
         String  password;
@@ -268,6 +301,7 @@ public abstract class DittoHttpClientBase {
         public B port(int port)      { this.port     = port;   return (B) this; }
         public B tls(boolean tls)    { this.tls      = tls;    return (B) this; }
         public B rejectUnauthorized(boolean r) { this.rejectUnauthorized = r; return (B) this; }
+        public B devInsecureTls(boolean devInsecureTls) { this.devInsecureTls = devInsecureTls; return (B) this; }
         public B trustedCertPath(String path) { this.trustedCertPath = path; return (B) this; }
         public B username(String u)  { this.username = u;      return (B) this; }
         public B password(String p)  { this.password = p;      return (B) this; }

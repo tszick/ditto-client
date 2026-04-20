@@ -22,6 +22,7 @@ type HTTPClientOptions struct {
 	Password           string
 	RejectUnauthorized bool
 	InsecureSkipVerify bool
+	DevInsecureTLS     bool
 	ConnectTimeout     time.Duration
 	RequestTimeout     time.Duration
 	Timeout            time.Duration
@@ -69,7 +70,9 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 	}
 	if opts.TLS {
 		insecureSkipVerify := opts.InsecureSkipVerify
-		if opts.RejectUnauthorized {
+		if opts.DevInsecureTLS {
+			insecureSkipVerify = true
+		} else if opts.RejectUnauthorized {
 			insecureSkipVerify = false
 		}
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec

@@ -139,6 +139,12 @@ Client impact:
 
 Both protocols support TLS. The TCP protocol uses Bincode 1.x encoding with a 4-byte big-endian frame length prefix.
 
+TLS policy is secure-by-default across SDKs. Dev-only insecure bypass is explicit:
+- Node.js: `devInsecureTls: true`
+- Go: `DevInsecureTLS: true`
+- Java: `.devInsecureTls(true)`
+- Python: `dev_insecure_tls=True`
+
 ## Quick test commands
 
 ```bash
@@ -153,5 +159,5 @@ cd ditto-client && python contracts/validate_contracts.py
 
 Contract specs live in `contracts/` and define language-agnostic behavior
 expectations for parity runners. CI validates JSON structure with
-`contracts/validate_contracts.py`, and Go SDK currently executes the core
-suite via `ditto-go-client/contract_runner_test.go`.
+`contracts/validate_contracts.py`, and all SDK lanes execute runtime contract
+checks against `contracts/core-ops.contract.json`.

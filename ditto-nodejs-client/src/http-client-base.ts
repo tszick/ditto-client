@@ -26,6 +26,8 @@ export interface DittoHttpClientOptions {
    * Set to false to accept self-signed certs. Default: true.
    */
   rejectUnauthorized?: boolean;
+  /** Dev-only insecure TLS mode (accepts untrusted certs). Default: false */
+  devInsecureTls?: boolean;
   /** Request timeout in milliseconds. Default: 10000 */
   timeoutMs?: number;
   /** Enable retry with exponential backoff on transient failures. Default: true */
@@ -85,8 +87,9 @@ export class DittoHttpClientBase {
     }
 
     if (opts.tls) {
+      const devInsecureTls = opts.devInsecureTls ?? false;
       this.agent = new https.Agent({
-        rejectUnauthorized: opts.rejectUnauthorized ?? true,
+        rejectUnauthorized: devInsecureTls ? false : (opts.rejectUnauthorized ?? true),
       });
     }
 

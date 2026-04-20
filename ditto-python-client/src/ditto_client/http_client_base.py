@@ -32,6 +32,7 @@ class DittoHttpClientBase:
         username: str | None = None,
         password: str | None = None,
         reject_unauthorized: bool = True,
+        dev_insecure_tls: bool = False,
         timeout_secs: float = 10.0,
         strict_mode: bool = False,
     ) -> None:
@@ -48,7 +49,7 @@ class DittoHttpClientBase:
 
         if tls:
             ctx = ssl.create_default_context()
-            if not reject_unauthorized:
+            if dev_insecure_tls or not reject_unauthorized:
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
             self._ssl_ctx = ctx
@@ -102,6 +103,7 @@ class DittoHttpClientBase:
         except urllib.error.HTTPError as exc:
             # HTTPError carries a status code and body.
             body_text = exc.read().decode("utf-8") if exc.fp else ""
+            exc.close()
             return exc.code, body_text
 
     def _assert_ok(self, status: int, body: str) -> None:

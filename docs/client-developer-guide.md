@@ -93,7 +93,8 @@ For long-lived idle watch connections:
 ### HTTP client TLS options
 
 - `tls: true` for HTTPS.
-- `rejectUnauthorized: false` only for dev/self-signed environments.
+- secure default: certificate validation stays enabled.
+- dev-only insecure bypass is explicit via `devInsecureTls: true` (or legacy `rejectUnauthorized: false`).
 
 ## Java notes
 
@@ -101,6 +102,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both clients.
 - TCP watch APIs are available: `watch(key)`, `waitForWatchEvent()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `new DittoTcpClient(host, port, authToken, strictMode, autoReconnect)`.
+- HTTP TLS secure default is enabled when `tls(true)`; dev-only insecure mode is explicit via `.devInsecureTls(true)`.
 - Exceptions are surfaced as `IOException`, `InterruptedException`, or Ditto-specific exception types depending on layer.
 
 ## Python notes
@@ -110,6 +112,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both HTTP and TCP clients.
 - TCP watch APIs are available: `watch(key)`, `wait_watch_event()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `auto_reconnect=True`.
+- HTTP TLS secure default is enabled when `tls=True`; dev-only insecure mode is explicit via `dev_insecure_tls=True`.
 
 ## Go notes
 
@@ -117,7 +120,7 @@ For long-lived idle watch connections:
 - Namespace-aware helpers are available for both protocols.
 - Strict mode is available via `StrictMode: true` in client options.
 - HTTP TLS verification is secure-by-default when `TLS: true`.
-- Dev-only insecure mode is explicit via `InsecureSkipVerify: true`.
+- Dev-only insecure mode is explicit via `DevInsecureTLS: true` (legacy `InsecureSkipVerify: true` remains supported).
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
 
@@ -248,6 +251,15 @@ Pass condition:
 - PR no-regression checks (Phase C entry):
   - Node.js line coverage compared against base branch,
   - Go statement coverage compared against base branch.
+
+## Contract runtime parity
+
+- `contracts/core-ops.contract.json` defines the shared runtime cases.
+- All SDK lanes execute runtime adapter tests against this contract in CI:
+  - Node: `tests/contract-runtime.test.mjs`
+  - Go: `contract_runner_test.go`
+  - Python: `tests/test_contract_runtime.py`
+  - Java: `DittoContractRuntimeSmokeTest`
 
 ## Compatibility expectations
 

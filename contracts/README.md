@@ -4,7 +4,11 @@ This directory contains language-agnostic contract specs used to keep SDK behavi
 
 Current phase:
 - spec structure validation in CI,
-- initial runtime adapter execution available in Go SDK tests (`ditto-go-client/contract_runner_test.go`).
+- runtime adapter execution available across all maintained SDKs:
+  - Node: `ditto-nodejs-client/tests/contract-runtime.test.mjs`
+  - Go: `ditto-go-client/contract_runner_test.go`
+  - Python: `ditto-python-client/tests/test_contract_runtime.py`
+  - Java: `ditto-java-client/src/test/java/io/ditto/client/DittoContractRuntimeSmokeTest.java`
 
 Files:
 - `*.contract.json`: contract suites (versioned JSON specs),
