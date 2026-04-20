@@ -116,6 +116,8 @@ For long-lived idle watch connections:
 - Synchronous API for HTTP and TCP clients.
 - Namespace-aware helpers are available for both protocols.
 - Strict mode is available via `StrictMode: true` in client options.
+- HTTP TLS verification is secure-by-default when `TLS: true`.
+- Dev-only insecure mode is explicit via `InsecureSkipVerify: true`.
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
 
