@@ -3,4 +3,5 @@ ditto-nodejs-client/dist/
 ditto-nodejs-client/node_modules/
 ditto-java-client/build/
 ditto-java-client/.gradle/
-
+ditto-python-client/**/__pycache__/
+ditto-python-client/**/*.pyc

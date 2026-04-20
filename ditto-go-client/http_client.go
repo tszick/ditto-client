@@ -21,6 +21,7 @@ type HTTPClientOptions struct {
 	Username           string
 	Password           string
 	RejectUnauthorized bool
+	InsecureSkipVerify bool
 	ConnectTimeout     time.Duration
 	RequestTimeout     time.Duration
 	Timeout            time.Duration
@@ -67,7 +68,11 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 		}).DialContext,
 	}
 	if opts.TLS {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: !opts.RejectUnauthorized} //nolint:gosec
+		insecureSkipVerify := opts.InsecureSkipVerify
+		if opts.RejectUnauthorized {
+			insecureSkipVerify = false
+		}
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec
 	}
 	c := &HTTPClient{
 		baseURL: fmt.Sprintf("%s://%s:%d", scheme, host, port),

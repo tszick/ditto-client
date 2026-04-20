@@ -22,6 +22,12 @@ _ = client.Connect()
 _, _ = client.SetString("k", "v", 60)
 ```
 
+## TLS behavior (HTTP client)
+
+- TLS certificate verification is enabled by default when `TLS: true`.
+- To opt into insecure/self-signed acceptance for local dev only, set `InsecureSkipVerify: true`.
+- `RejectUnauthorized: true` forces certificate verification.
+
 ## Watch + reconnect example
 
 ```go
