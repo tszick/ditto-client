@@ -71,6 +71,7 @@ class DittoErrorCode(str, Enum):
     KEY_LIMIT_REACHED = "KeyLimitReached"
     RATE_LIMITED     = "RateLimited"
     CIRCUIT_OPEN     = "CircuitOpen"
+    NAMESPACE_QUOTA_EXCEEDED = "NamespaceQuotaExceeded"
     AUTH_FAILED      = "AuthFailed"
 
 

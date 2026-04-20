@@ -154,6 +154,8 @@ cd ditto-client/ditto-python-client && python -m unittest discover -s tests -v
 cd ditto-client/ditto-java-client && ./gradlew test --console=plain
 cd ditto-client/ditto-nodejs-client && npm run test:integration
 cd ditto-client && python contracts/validate_contracts.py
+cd ditto-client && python scripts/validate_protocol_snapshot.py
+cd ditto-client && python scripts/check_sdk_protocol_parity.py
 ```
 
 ## Cross-SDK contract specs
@@ -162,3 +164,8 @@ Contract specs live in `contracts/` and define language-agnostic behavior
 expectations for parity runners. CI validates JSON structure with
 `contracts/validate_contracts.py`, and all SDK lanes execute runtime contract
 checks against `contracts/core-ops.contract.json`.
+
+Protocol schema-first snapshot:
+- Canonical snapshot file: `contracts/protocol-contract.snapshot.json`
+- Local sync helper (workspace sibling): `python scripts/sync_protocol_snapshot.py`
+- CI parity gate workflow: `.github/workflows/protocol-parity.yml`

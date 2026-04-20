@@ -11,6 +11,7 @@ public enum DittoErrorCode {
     KEY_LIMIT_REACHED,
     RATE_LIMITED,
     CIRCUIT_OPEN,
+    NAMESPACE_QUOTA_EXCEEDED,
     AUTH_FAILED;
 
     private static final DittoErrorCode[] VALUES = values();

@@ -20,7 +20,8 @@ class BincodeDecodeTests(unittest.TestCase):
         cases = [
             (7, DittoErrorCode.RATE_LIMITED),
             (8, DittoErrorCode.CIRCUIT_OPEN),
-            (9, DittoErrorCode.AUTH_FAILED),
+            (9, DittoErrorCode.NAMESPACE_QUOTA_EXCEEDED),
+            (10, DittoErrorCode.AUTH_FAILED),
         ]
         for idx, want in cases:
             payload = (

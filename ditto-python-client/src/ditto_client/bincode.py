@@ -19,7 +19,7 @@ ClientResponse variant indices: Value=0, Ok=1, Deleted=2, NotFound=3, Pong=4, Au
 ErrorCode variant indices: NodeInactive=0, NoQuorum=1, KeyNotFound=2,
                             InternalError=3, WriteTimeout=4, ValueTooLarge=5,
                             KeyLimitReached=6, RateLimited=7, CircuitOpen=8,
-                            AuthFailed=9
+                            NamespaceQuotaExceeded=9, AuthFailed=10
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ _ERROR_CODE_NAMES = [
     DittoErrorCode.KEY_LIMIT_REACHED,
     DittoErrorCode.RATE_LIMITED,
     DittoErrorCode.CIRCUIT_OPEN,
+    DittoErrorCode.NAMESPACE_QUOTA_EXCEEDED,
     DittoErrorCode.AUTH_FAILED,
 ]
 

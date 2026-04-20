@@ -63,6 +63,7 @@ export type DittoErrorCode =
   | 'KeyLimitReached'
   | 'RateLimited'
   | 'CircuitOpen'
+  | 'NamespaceQuotaExceeded'
   | 'AuthFailed';
 
 /** Error thrown when the server returns an error response. */

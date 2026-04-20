@@ -260,6 +260,7 @@ func decodeResponse(payload []byte) (*tcpResponse, error) {
 			ErrKeyLimitReached,
 			ErrRateLimited,
 			ErrCircuitOpen,
+			ErrNamespaceQuotaExceeded,
 			ErrAuthFailed,
 		}
 		code := ErrInternalError

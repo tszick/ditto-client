@@ -266,6 +266,11 @@ Pass condition:
   - Go: `contract_runner_test.go`
   - Python: `tests/test_contract_runtime.py`
   - Java: `DittoContractRuntimeSmokeTest`
+- Schema-first protocol snapshot is tracked in `contracts/protocol-contract.snapshot.json`.
+- Protocol parity gate workflow: `.github/workflows/protocol-parity.yml`
+  - validates snapshot structure,
+  - validates contract JSON specs,
+  - checks SDK known error-code sets against protocol `ErrorCode` enum.
 
 ## Compatibility expectations
 

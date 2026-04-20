@@ -169,6 +169,7 @@ const ERROR_CODE_NAMES: DittoErrorCode[] = [
   'KeyLimitReached',
   'RateLimited',
   'CircuitOpen',
+  'NamespaceQuotaExceeded',
   'AuthFailed',
 ];
 

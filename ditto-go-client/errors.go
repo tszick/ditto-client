@@ -12,6 +12,7 @@ const (
 	ErrKeyLimitReached = "KeyLimitReached"
 	ErrRateLimited     = "RateLimited"
 	ErrCircuitOpen     = "CircuitOpen"
+	ErrNamespaceQuotaExceeded = "NamespaceQuotaExceeded"
 	ErrAuthFailed      = "AuthFailed"
 )
 

@@ -27,7 +27,7 @@ class DittoErrorCodePolicySmokeTest {
         DittoHttpClient client = DittoHttpClient.builder().host("127.0.0.1").port(port).build();
         try {
             DittoException ex = assertThrows(DittoException.class, () -> client.get("x"));
-            assertEquals(DittoErrorCode.INTERNAL_ERROR, ex.getCode());
+            assertEquals(DittoErrorCode.NAMESPACE_QUOTA_EXCEEDED, ex.getCode());
             assertEquals("NamespaceQuotaExceeded", ex.getRawCode());
             assertEquals("quota hit", ex.getMessage());
         } finally {

@@ -1,0 +1,29 @@
+﻿name: Protocol Parity Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  protocol-parity:
+    name: Snapshot + SDK Parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate protocol snapshot structure
+        run: python scripts/validate_protocol_snapshot.py
+
+      - name: Validate contract specs
+        run: python contracts/validate_contracts.py
+
+      - name: Check SDK error-code parity against protocol snapshot
+        run: python scripts/check_sdk_protocol_parity.py
