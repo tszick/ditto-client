@@ -14,10 +14,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout ditto-cache source of truth
+        uses: actions/checkout@v4
+        with:
+          repository: tszick/ditto-cache
+          path: ditto-cache-source
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Check snapshot matches ditto-cache protocol contract
+        run: python scripts/sync_protocol_snapshot.py --check --source ditto-cache-source/ditto-protocol/schema/protocol-contract.json
 
       - name: Validate protocol snapshot structure
         run: python scripts/validate_protocol_snapshot.py

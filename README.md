@@ -169,3 +169,17 @@ Protocol schema-first snapshot:
 - Canonical snapshot file: `contracts/protocol-contract.snapshot.json`
 - Local sync helper (workspace sibling): `python scripts/sync_protocol_snapshot.py`
 - CI parity gate workflow: `.github/workflows/protocol-parity.yml`
+  - checks snapshot drift against `ditto-cache/ditto-protocol/schema/protocol-contract.json`,
+  - validates snapshot structure,
+  - validates contract specs,
+  - checks SDK known error-code parity against the protocol snapshot.
+  - current committed parity includes `NamespaceQuotaExceeded`.
+
+Coverage status:
+- `.github/workflows/coverage-report.yml` publishes multi-language coverage artifacts.
+- Current CI gate state is conservative required no-regression:
+  - enforced PR no-regression checks for Node.js, Go, Python, and Java coverage,
+  - not yet a fully enforced cross-SDK absolute-threshold gate.
+
+Release gate note:
+- production-ready candidates are expected to keep `Snapshot + SDK Parity` green and to align with the cross-repo checklist in `ditto-cache/docs/release-readiness-checklist.md`.

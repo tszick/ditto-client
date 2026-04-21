@@ -245,18 +245,25 @@ Pass condition:
   - runs Go test sanity before release tagging.
 - See details in `docs/client-release-guide.md`.
 
-## Coverage reporting (Phase A)
+## Coverage hardening status
 
 - Workflow: `.github/workflows/coverage-report.yml`
-- Purpose: generate multi-language coverage reports on PR/push/manual runs without coverage-gate failure yet.
+- Purpose: generate multi-language coverage reports on PR/push/manual runs; current status is required no-regression plus report artifacts, rather than absolute threshold enforcement.
 - Artifacts:
   - Node.js coverage output (`coverage-node.txt`),
   - Go coverage (`coverage.out`, `coverage-go.txt`),
   - Python coverage (`.coverage`, `coverage.xml`, `coverage-python.txt`),
   - Java JaCoCo XML/HTML report.
-- PR no-regression checks (Phase C entry):
+- PR no-regression checks currently enabled:
   - Node.js line coverage compared against base branch,
-  - Go statement coverage compared against base branch.
+  - Go statement coverage compared against base branch,
+  - Python line coverage compared against base branch,
+  - Java line coverage compared against base branch via JaCoCo XML.
+- Remaining gap:
+  - repository-wide absolute threshold enforcement is not yet documented as a stable blocking gate for all SDK lanes.
+- Current policy:
+  - the four SDK PR coverage gates are treated as required base-branch no-regression checks,
+  - this is the conservative enforcement model until a broader threshold policy is proven stable.
 
 ## Contract runtime parity
 
@@ -268,9 +275,11 @@ Pass condition:
   - Java: `DittoContractRuntimeSmokeTest`
 - Schema-first protocol snapshot is tracked in `contracts/protocol-contract.snapshot.json`.
 - Protocol parity gate workflow: `.github/workflows/protocol-parity.yml`
+  - checks snapshot drift against `ditto-cache/ditto-protocol/schema/protocol-contract.json`,
   - validates snapshot structure,
   - validates contract JSON specs,
   - checks SDK known error-code sets against protocol `ErrorCode` enum.
+  - current snapshot includes `NamespaceQuotaExceeded` parity alignment across SDKs.
 
 ## Compatibility expectations
 
@@ -316,6 +325,17 @@ When introducing protocol-level changes:
     - added manual release dry-run workflow (`.github/workflows/release-dry-run.yml`),
     - added release planning script (`scripts/release-dry-run.sh`),
     - added release guide (`docs/client-release-guide.md`).
-  - Sprint 5 / Phase A kickoff:
+  - coverage/reporting bootstrap:
     - added coverage-report workflow (`.github/workflows/coverage-report.yml`),
     - enabled Java JaCoCo report generation in Gradle (`test` + `jacocoTestReport`).
+
+- Completed (2026-04-19):
+  - protocol snapshot / parity hardening:
+    - added protocol parity gate (`.github/workflows/protocol-parity.yml`),
+    - aligned SDK known error-code sets with the protocol snapshot for `NamespaceQuotaExceeded`,
+    - committed updated `contracts/protocol-contract.snapshot.json`.
+
+- Status note:
+  - client parity and release-prep workstreams above are closed based on committed workflows/tests/docs,
+  - coverage hardening is repo-side complete for the current conservative policy: required base-branch no-regression across Node/Go/Python/Java.
+  - release candidate expectations are anchored by `Snapshot + SDK Parity` plus the cross-repo checklist in `ditto-cache/docs/release-readiness-checklist.md`.
