@@ -10,6 +10,13 @@ import * as https from 'node:https';
 import { DittoError } from './types.js';
 import type { DittoErrorCode } from './types.js';
 
+interface DittoHttpRequestInit {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
+}
+
 export interface DittoHttpClientOptions {
   /** Hostname or IP address of the dittod node. Default: 'localhost' */
   host?: string;
@@ -23,10 +30,10 @@ export interface DittoHttpClientOptions {
   password?: string;
   /**
    * Reject unauthorized TLS certificates.
-   * Set to false to accept self-signed certs. Default: true.
+   * Default: true.
    */
   rejectUnauthorized?: boolean;
-  /** Dev-only insecure TLS mode (accepts untrusted certs). Default: false */
+  /** Insecure TLS bypass is not supported. */
   devInsecureTls?: boolean;
   /** Request timeout in milliseconds. Default: 10000 */
   timeoutMs?: number;
@@ -88,8 +95,14 @@ export class DittoHttpClientBase {
 
     if (opts.tls) {
       const devInsecureTls = opts.devInsecureTls ?? false;
+      if (devInsecureTls) {
+        throw new Error(
+          'devInsecureTls(true) is insecure and is no longer supported. '
+          + 'Use a trusted certificate configuration instead.',
+        );
+      }
       this.agent = new https.Agent({
-        rejectUnauthorized: devInsecureTls ? false : (opts.rejectUnauthorized ?? true),
+        rejectUnauthorized: opts.rejectUnauthorized ?? true,
       });
     }
 
@@ -113,14 +126,15 @@ export class DittoHttpClientBase {
   close(): void { /* HTTP is stateless – nothing to close */ }
 
   /** @internal */
-  protected async request(path: string, init: RequestInit = {}): Promise<Response> {
+  protected async request(path: string, init: DittoHttpRequestInit = {}): Promise<Response> {
     const headers: Record<string, string> = {
-      ...(init.headers as Record<string, string> | undefined),
+      ...(init.headers ?? {}),
     };
     if (this.authHeader) headers['Authorization'] = this.authHeader;
 
     const url = `${this.baseUrl}${path}`;
     const method = (init.method ?? 'GET').toUpperCase();
+    const body = this.normalizeRequestBody(init.body);
     const canRetry = this.retryEnabled && this.retryMethods.has(method);
     this.beforeRequest();
 
@@ -129,11 +143,11 @@ export class DittoHttpClientBase {
     while (true) {
       try {
         const resp = this.agent
-          ? await this.requestHttps(url, method, headers, init.body)
+          ? await this.requestHttps(url, method, headers, body)
           : await fetch(url, {
-            ...init,
             method,
             headers,
+            body,
             signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
           });
 
@@ -214,7 +228,7 @@ export class DittoHttpClientBase {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body: unknown,
+    body?: string,
   ): Promise<Response> {
     return new Promise<Response>((resolve, reject) => {
       const req = https.request(url, { method, headers, agent: this.agent }, (res) => {
@@ -244,23 +258,21 @@ export class DittoHttpClientBase {
       });
       req.on('error', reject);
 
-      if (body === undefined || body === null) {
+      if (body === undefined) {
         req.end();
         return;
       }
 
-      if (typeof body === 'string') {
-        req.end(body);
-        return;
-      }
-
-      if (body instanceof Buffer || body instanceof Uint8Array) {
-        req.end(body);
-        return;
-      }
-
-      reject(new Error('Unsupported HTTPS request body type'));
+      req.end(body);
     });
+  }
+
+  private normalizeRequestBody(body: string | undefined): string | undefined {
+    if (body === undefined) return undefined;
+    if (typeof body !== 'string') {
+      throw new Error('Unsupported HTTP request body type');
+    }
+    return body;
   }
 
   /** @internal */

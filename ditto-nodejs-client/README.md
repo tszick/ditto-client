@@ -66,7 +66,7 @@ new DittoHttpClient(opts?: {
   tls?:                boolean;  // default: false
   username?:           string;   // HTTP Basic Auth
   password?:           string;
-  rejectUnauthorized?: boolean;  // default: true (set false for self-signed certs)
+  rejectUnauthorized?: boolean;  // default: true
   timeoutMs?:          number;   // default: 10000
   retryEnabled?:       boolean;  // default: true
   maxRetries?:         number;   // default: 2 (only for retryable methods)
@@ -231,6 +231,8 @@ try {
 
 ## HTTPS / TLS
 
+Use normal TLS verification. Insecure TLS bypass is not supported.
+
 ```typescript
 const client = new DittoHttpClient({
   host:               'my-node.example.com',
@@ -238,7 +240,7 @@ const client = new DittoHttpClient({
   tls:                true,
   username:           'ditto',
   password:           'mypassword',
-  rejectUnauthorized: false,  // set false if using self-signed certs
+  rejectUnauthorized: true,
 });
 ```
 

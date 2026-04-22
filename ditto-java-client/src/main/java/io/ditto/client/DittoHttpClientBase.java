@@ -21,8 +21,6 @@ import java.util.Base64;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 
 /**
  * DittoHttpClientBase – infrastructure for the generated {@link DittoHttpClient}.
@@ -80,25 +78,23 @@ public abstract class DittoHttpClientBase {
 
         if (b.tls) {
             if (b.devInsecureTls) {
+                throw new IllegalArgumentException(
+                        "devInsecureTls(true) is insecure and is no longer supported. "
+                                + "Use trustedCertPath(...) for self-signed or private CA deployments."
+                );
+            }
+            if (!b.rejectUnauthorized) {
+                throw new IllegalArgumentException(
+                        "rejectUnauthorized(false) is insecure and is no longer supported. "
+                                + "Use trustedCertPath(...) for self-signed or private CA deployments."
+                );
+            }
+            if (b.trustedCertPath != null && !b.trustedCertPath.isBlank()) {
                 try {
-                    httpBuilder.sslContext(buildInsecureTlsContext());
+                    SSLContext sslContext = buildPinnedTlsContext(b.trustedCertPath);
+                    httpBuilder.sslContext(sslContext);
                 } catch (Exception e) {
-                    throw new IllegalStateException("Failed to initialize insecure TLS context", e);
-                }
-            } else {
-                if (!b.rejectUnauthorized) {
-                    throw new IllegalArgumentException(
-                            "rejectUnauthorized(false) is insecure and is no longer supported. "
-                                    + "Use devInsecureTls(true) for explicit local-dev bypass or trustedCertPath(...) for pinned trust."
-                    );
-                }
-                if (b.trustedCertPath != null && !b.trustedCertPath.isBlank()) {
-                    try {
-                        SSLContext sslContext = buildPinnedTlsContext(b.trustedCertPath);
-                        httpBuilder.sslContext(sslContext);
-                    } catch (Exception e) {
-                        throw new IllegalStateException("Failed to initialize TLS context from trustedCertPath", e);
-                    }
+                    throw new IllegalStateException("Failed to initialize TLS context from trustedCertPath", e);
                 }
             }
         }
@@ -271,27 +267,6 @@ public abstract class DittoHttpClientBase {
 
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
-        return sslContext;
-    }
-
-    /** Build an insecure SSL context that trusts all server certificates (dev-only). */
-    private static SSLContext buildInsecureTlsContext() throws Exception {
-        TrustManager[] trustAll = new TrustManager[]{
-                new X509TrustManager() {
-                    @Override
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                        return new java.security.cert.X509Certificate[0];
-                    }
-
-                    @Override
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-
-                    @Override
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                }
-        };
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, trustAll, new SecureRandom());
         return sslContext;
     }
 
