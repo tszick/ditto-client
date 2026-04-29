@@ -1,7 +1,8 @@
 /**
  * DittoTcpClient – connects directly to dittod TCP port 7777.
  *
- * Uses the bincode 1.x binary protocol over a persistent TCP connection.
+ * Uses the protobuf-encoded `Envelope` wire protocol defined in
+ * `ditto-protocol/proto/ditto.proto` over a persistent TCP connection.
  * Requests are serialized; only one in-flight request at a time.
  *
  * ## Basic usage (manual lifecycle)
@@ -37,7 +38,7 @@ import {
   encodeUnwatch,
   decodeResponse,
   type ClientResponse,
-} from './bincode.js';
+} from './wire.js';
 import { DittoError } from './types.js';
 import type {
   DittoDeleteByPatternResult,

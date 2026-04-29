@@ -7,7 +7,7 @@ Two client classes are provided:
 | Class | Port | Protocol |
 |-------|------|----------|
 | `DittoHttpClient` | 7778 | JSON REST over HTTP(S) |
-| `DittoTcpClient`  | 7777 | bincode binary over TCP |
+| `DittoTcpClient`  | 7777 | protobuf `Envelope` over TCP (length-prefixed) |
 
 **Requirements:** Node.js >= 22
 

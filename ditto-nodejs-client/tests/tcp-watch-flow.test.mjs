@@ -4,44 +4,16 @@ import net from 'node:net';
 import { Buffer } from 'node:buffer';
 
 import { DittoTcpClient } from '../dist/index.js';
+import {
+  REQUEST_FIELDS,
+  RESPONSE_FIELDS,
+  decodeClientRequestVariant,
+  encodeVersionResponseInner,
+  encodeWatchEventInner,
+  frameClientResponse,
+} from '../dist/wire.js';
 
-function writeU64LE(value) {
-  const b = Buffer.allocUnsafe(8);
-  b.writeBigUInt64LE(BigInt(value), 0);
-  return b;
-}
-
-function frame(payload) {
-  const head = Buffer.allocUnsafe(4);
-  head.writeUInt32BE(payload.length, 0);
-  return Buffer.concat([head, payload]);
-}
-
-function payloadSimple(variant) {
-  const b = Buffer.allocUnsafe(4);
-  b.writeUInt32LE(variant, 0);
-  return b;
-}
-
-function payloadOk(version) {
-  return Buffer.concat([Buffer.from([1, 0, 0, 0]), writeU64LE(version)]);
-}
-
-function payloadWatchEvent(key, value, version) {
-  const keyBuf = Buffer.from(key, 'utf8');
-  const valBuf = Buffer.from(value, 'utf8');
-  return Buffer.concat([
-    Buffer.from([9, 0, 0, 0]),
-    writeU64LE(keyBuf.length),
-    keyBuf,
-    Buffer.from([1]),
-    writeU64LE(valBuf.length),
-    valBuf,
-    writeU64LE(version),
-  ]);
-}
-
-test('tcp watch/set/event/unwatch flow', async () => {
+test('tcp watch/set/event/unwatch flow (protobuf wire)', async () => {
   let stage = 0;
   let recvBuf = Buffer.alloc(0);
 
@@ -53,23 +25,28 @@ test('tcp watch/set/event/unwatch flow', async () => {
         if (recvBuf.length < 4 + n) break;
         const payload = recvBuf.subarray(4, 4 + n);
         recvBuf = recvBuf.subarray(4 + n);
-        const variant = payload.readUInt32LE(0);
+
+        const { field } = decodeClientRequestVariant(payload);
+
         if (stage === 0) {
-          assert.equal(variant, 5);
-          socket.write(frame(payloadSimple(7)));
+          assert.equal(field, REQUEST_FIELDS.WATCH);
+          socket.write(frameClientResponse(RESPONSE_FIELDS.WATCHING, Buffer.alloc(0)));
           stage = 1;
           continue;
         }
         if (stage === 1) {
-          assert.equal(variant, 1);
-          socket.write(frame(payloadOk(1)));
-          socket.write(frame(payloadWatchEvent('k', 'value', 2)));
+          assert.equal(field, REQUEST_FIELDS.SET);
+          socket.write(frameClientResponse(RESPONSE_FIELDS.OK, encodeVersionResponseInner(1)));
+          socket.write(frameClientResponse(
+            RESPONSE_FIELDS.WATCH_EVENT,
+            encodeWatchEventInner('k', Buffer.from('value', 'utf8'), 2),
+          ));
           stage = 2;
           continue;
         }
         if (stage === 2) {
-          assert.equal(variant, 6);
-          socket.write(frame(payloadSimple(8)));
+          assert.equal(field, REQUEST_FIELDS.UNWATCH);
+          socket.write(frameClientResponse(RESPONSE_FIELDS.UNWATCHED, Buffer.alloc(0)));
           stage = 3;
         }
       }
