@@ -1,7 +1,6 @@
 package ditto
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"net"
@@ -25,7 +24,7 @@ func TestTCPClientWatchSetEventUnwatchFlow(t *testing.T) {
 		}
 		defer conn.Close()
 
-		readVariant := func() (uint32, error) {
+		readVariant := func() (int, error) {
 			head := make([]byte, 4)
 			if _, err := io.ReadFull(conn, head); err != nil {
 				return 0, err
@@ -35,80 +34,56 @@ func TestTCPClientWatchSetEventUnwatchFlow(t *testing.T) {
 			if _, err := io.ReadFull(conn, payload); err != nil {
 				return 0, err
 			}
-			return binary.LittleEndian.Uint32(payload[:4]), nil
-		}
-		writePayload := func(payload []byte) error {
-			frame := make([]byte, 4+len(payload))
-			binary.BigEndian.PutUint32(frame[:4], uint32(len(payload)))
-			copy(frame[4:], payload)
-			_, err := conn.Write(frame)
-			return err
-		}
-		writeSimple := func(variant uint32) error {
-			var b bytes.Buffer
-			_ = binary.Write(&b, binary.LittleEndian, variant)
-			return writePayload(b.Bytes())
-		}
-		writeOK := func(version uint64) error {
-			var b bytes.Buffer
-			_ = binary.Write(&b, binary.LittleEndian, uint32(1))
-			_ = binary.Write(&b, binary.LittleEndian, version)
-			return writePayload(b.Bytes())
-		}
-		writeWatchEvent := func(key string, value []byte, version uint64) error {
-			var b bytes.Buffer
-			_ = binary.Write(&b, binary.LittleEndian, uint32(9))
-			_ = binary.Write(&b, binary.LittleEndian, uint64(len(key)))
-			_, _ = b.WriteString(key)
-			_ = b.WriteByte(1)
-			_ = binary.Write(&b, binary.LittleEndian, uint64(len(value)))
-			_, _ = b.Write(value)
-			_ = binary.Write(&b, binary.LittleEndian, version)
-			return writePayload(b.Bytes())
+			field, _, err := decodeClientRequestVariant(payload)
+			return field, err
 		}
 
+		// 1) Watch -> Watching
 		v, err := readVariant()
 		if err != nil {
 			done <- err
 			return
 		}
-		if v != 5 {
+		if v != reqWatch {
 			done <- io.ErrUnexpectedEOF
 			return
 		}
-		if err := writeSimple(7); err != nil {
+		if _, err := conn.Write(frameClientResponse(rspWatching, nil)); err != nil {
 			done <- err
 			return
 		}
 
+		// 2) Set -> Ok(version=1) + WatchEvent
 		v, err = readVariant()
 		if err != nil {
 			done <- err
 			return
 		}
-		if v != 1 {
+		if v != reqSet {
 			done <- io.ErrUnexpectedEOF
 			return
 		}
-		if err := writeOK(1); err != nil {
+		if _, err := conn.Write(frameClientResponse(rspOK, encodeVersionResponseInner(1))); err != nil {
 			done <- err
 			return
 		}
-		if err := writeWatchEvent("k", []byte("value"), 2); err != nil {
+		if _, err := conn.Write(frameClientResponse(rspWatchEvent, encodeWatchEventInner("k", []byte("value"), true, 2))); err != nil {
 			done <- err
 			return
 		}
 
+		// 3) Unwatch -> Unwatched
 		v, err = readVariant()
 		if err != nil {
 			done <- err
 			return
 		}
-		if v != 6 {
+		if v != reqUnwatch {
 			done <- io.ErrUnexpectedEOF
 			return
 		}
-		done <- writeSimple(8)
+		_, err = conn.Write(frameClientResponse(rspUnwatched, nil))
+		done <- err
 	}()
 
 	addr := ln.Addr().(*net.TCPAddr)

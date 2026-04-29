@@ -1,7 +1,8 @@
 """
 DittoTcpClient – connects directly to dittod TCP port 7777.
 
-Uses the bincode 1.x binary protocol over a persistent TCP connection.
+Uses the protobuf-encoded ``Envelope`` wire protocol defined in
+``ditto-protocol/proto/ditto.proto`` over a persistent TCP connection.
 Requests are serialised via a threading.Lock; safe to call from multiple threads.
 """
 
@@ -12,7 +13,7 @@ import struct
 import threading
 import errno
 
-from .bincode import (
+from .wire import (
     ClientResponse,
     decode_response,
     encode_delete,
@@ -282,7 +283,7 @@ class DittoTcpClient:
         self._sock = sock
 
         if self._auth_token is not None:
-            from .bincode import encode_auth
+            from .wire import encode_auth
             self._sock.sendall(encode_auth(self._auth_token))
             resp = self._recv()
             if getattr(resp, "type", None) == "Error":

@@ -16,8 +16,15 @@ Shared behavior target:
 
 ## Protocols
 
-- TCP binary (`dittod` port 7777)
-- HTTP/HTTPS REST (`dittod` port 7778)
+- TCP binary (`dittod` port 7777) — protobuf-encoded `Envelope` messages,
+  4-byte big-endian length-prefixed. The wire contract is defined in
+  `ditto-cache/ditto-protocol/proto/ditto.proto` (proto3, package
+  `ditto.protocol.v1`); this `.proto` file is the source of truth across
+  every SDK. The earlier bincode 1.x wire format was retired during the
+  protobuf migration — pre-migration SDK builds cannot talk to a `dittod`
+  built after the migration commit.
+- HTTP/HTTPS REST (`dittod` port 7778) — JSON over HTTP, unaffected by the
+  TCP wire-format change.
 
 ## Feature matrix (current)
 
@@ -58,7 +65,7 @@ Shared behavior target:
 
 - All SDKs support namespace-scoped cache operations.
 - HTTP clients send namespace with `X-Ditto-Namespace` header.
-- TCP clients encode namespace via protocol `Option<String>` field on request variants.
+- TCP clients encode namespace as the protobuf `OptionalString namespace` sub-message on request variants (omitted when blank).
 - Omitted/empty namespace falls back to server-side default namespace behavior.
 
 ### Strict mode semantics

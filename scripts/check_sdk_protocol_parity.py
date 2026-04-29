@@ -15,6 +15,18 @@ PY_TYPES = ROOT / "ditto-python-client" / "src" / "ditto_client" / "types.py"
 JAVA_ERRORS = ROOT / "ditto-java-client" / "src" / "main" / "java" / "io" / "ditto" / "client" / "DittoErrorCode.java"
 
 
+_PROTO_ERROR_CODE_PREFIX = "ERROR_CODE_"
+
+
+def strip_proto_error_code_prefix(name: str) -> str:
+    """Convert proto3 ErrorCode value names (``ERROR_CODE_RATE_LIMITED``) into
+    the SDK-facing camel-case form (``RateLimited``) used by Node/Go/Python."""
+    if not name.startswith(_PROTO_ERROR_CODE_PREFIX):
+        return name
+    tail = name[len(_PROTO_ERROR_CODE_PREFIX):]
+    return "".join(part.capitalize() for part in tail.split("_"))
+
+
 def to_upper_snake(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
 
@@ -45,7 +57,9 @@ def parse_java_constants(path: Path) -> set[str]:
 
 def main() -> int:
     payload = json.loads(SNAPSHOT.read_text(encoding="utf-8-sig"))
-    required = set(payload["enums"]["ErrorCode"])
+    # Snapshot stores proto3 enum value names (ERROR_CODE_*); SDKs use the
+    # camel-case form (RateLimited) on the wire / in their public API.
+    required = {strip_proto_error_code_prefix(c) for c in payload["enums"]["ErrorCode"]}
 
     node = parse_node_codes(NODE_TYPES)
     go = parse_go_codes(GO_ERRORS)

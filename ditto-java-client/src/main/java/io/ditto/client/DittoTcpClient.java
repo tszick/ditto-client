@@ -2,25 +2,20 @@ package io.ditto.client;
 
 import java.io.*;
 import java.net.Socket;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
 /**
  * DittoTcpClient – connects directly to dittod TCP port 7777.
  *
- * <p>Uses the bincode 1.x binary protocol over a persistent TCP connection.
- * All public methods are {@code synchronized}, so concurrent calls from multiple
- * threads are safely serialized over the single socket.
+ * <p>Uses the protobuf-encoded {@code Envelope} wire protocol defined in
+ * {@code ditto-protocol/proto/ditto.proto} over a persistent TCP connection.
+ * All public methods are {@code synchronized}, so concurrent calls from
+ * multiple threads are safely serialized over the single socket.
  *
- * <p>Bincode 1.x wire rules (matches Rust defaults):
- * <ul>
- *   <li>Integers: little-endian</li>
- *   <li>Enum variant: {@code u32 LE} (declaration order index)</li>
- *   <li>String/Bytes: {@code u64 LE} length prefix + raw bytes</li>
- *   <li>Option&lt;T&gt;: {@code u8} (0 = None, 1 = Some) + T if Some</li>
- * </ul>
- * Wire framing: 4-byte big-endian length prefix before each bincode payload.
+ * <p>Wire framing: 4-byte big-endian length prefix before each protobuf
+ * Envelope. Each outbound payload is an {@code Envelope { version=1,
+ * client_request: <variant> }} and each inbound payload carries a
+ * {@code client_response: <variant>}.
  *
  * <p>Usage:
  * <pre>{@code
@@ -299,130 +294,45 @@ public class DittoTcpClient implements Closeable {
         };
     }
 
-    // ── Bincode encoding ──────────────────────────────────────────────────────
+    // ── Protobuf wire — request encoders ──────────────────────────────────────
 
-    /** Variant 0: Get { key } */
     private byte[] encodeGet(String key, String namespace) {
-        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns  = namespaceBytes(namespace);
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(0);
-        buf.putLong(kb.length);
-        buf.put(kb);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_GET, Wire.encodeKeyNamespace(key, namespace));
     }
 
-    /** Variant 1: Set { key, value, ttl_secs } */
     private byte[] encodeSet(String key, byte[] value, long ttlSecs, String namespace) {
-        byte[]     kb     = key.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns     = namespaceBytes(namespace);
-        boolean    hasTtl = ttlSecs > 0;
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        int        size   = 4 + 8 + kb.length + 8 + value.length + 1 + (hasTtl ? 8 : 0) + nsSize;
-        ByteBuffer buf    = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(1);
-        buf.putLong(kb.length);
-        buf.put(kb);
-        buf.putLong(value.length);
-        buf.put(value);
-        buf.put(hasTtl ? (byte) 1 : (byte) 0);
-        if (hasTtl) buf.putLong(ttlSecs);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_SET, Wire.encodeSetRequest(key, value, ttlSecs, namespace));
     }
 
-    /** Variant 2: Delete { key } */
     private byte[] encodeDelete(String key, String namespace) {
-        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns  = namespaceBytes(namespace);
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(2);
-        buf.putLong(kb.length);
-        buf.put(kb);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_DELETE, Wire.encodeKeyNamespace(key, namespace));
     }
 
-    /** Variant 3: Ping */
     private byte[] encodePing() {
-        ByteBuffer buf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(3);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_PING, new byte[0]);
     }
 
-    /** Variant 4: Auth { token } */
     private byte[] encodeAuth(String token) {
-        byte[]     tb  = token.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + tb.length).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(4);
-        buf.putLong(tb.length);
-        buf.put(tb);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_AUTH, Wire.encodeAuthRequest(token));
     }
 
-    /** Variant 5: Watch { key } */
     private byte[] encodeWatch(String key, String namespace) {
-        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns  = namespaceBytes(namespace);
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(5);
-        buf.putLong(kb.length);
-        buf.put(kb);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_WATCH, Wire.encodeKeyNamespace(key, namespace));
     }
 
-    /** Variant 6: Unwatch { key } */
     private byte[] encodeUnwatch(String key, String namespace) {
-        byte[]     kb  = key.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns  = namespaceBytes(namespace);
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + kb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(6);
-        buf.putLong(kb.length);
-        buf.put(kb);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_UNWATCH, Wire.encodeKeyNamespace(key, namespace));
     }
 
-    /** Variant 7: DeleteByPattern { pattern } */
     private byte[] encodeDeleteByPattern(String pattern, String namespace) {
-        byte[]     pb  = pattern.getBytes(StandardCharsets.UTF_8);
-        byte[]     ns  = namespaceBytes(namespace);
-        int        nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        ByteBuffer buf = ByteBuffer.allocate(4 + 8 + pb.length + nsSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(7);
-        buf.putLong(pb.length);
-        buf.put(pb);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_DELETE_BY_PATTERN, Wire.encodePatternNamespace(pattern, namespace));
     }
 
-    /** Variant 8: SetTtlByPattern { pattern, ttl_secs } */
     private byte[] encodeSetTtlByPattern(String pattern, long ttlSecs, String namespace) {
-        byte[]  pb     = pattern.getBytes(StandardCharsets.UTF_8);
-        byte[]  ns     = namespaceBytes(namespace);
-        boolean hasTtl = ttlSecs > 0;
-        int     nsSize = ns == null ? 1 : 1 + 8 + ns.length;
-        int     size   = 4 + 8 + pb.length + 1 + (hasTtl ? 8 : 0) + nsSize;
-        ByteBuffer buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(8);
-        buf.putLong(pb.length);
-        buf.put(pb);
-        buf.put(hasTtl ? (byte) 1 : (byte) 0);
-        if (hasTtl) buf.putLong(ttlSecs);
-        putOptionalString(buf, ns);
-        return frame(buf.array());
+        return Wire.wrapClientRequest(Wire.REQ_SET_TTL_BY_PATTERN, Wire.encodeSetTtlByPatternRequest(pattern, ttlSecs, namespace));
     }
 
-    private static byte[] namespaceBytes(String namespace) {
-        if (namespace == null || namespace.isBlank()) return null;
-        return namespace.getBytes(StandardCharsets.UTF_8);
-    }
+    // ── Validation ────────────────────────────────────────────────────────────
 
     private void validateCoreInputs(String op, String key, String namespace) {
         if (!strictMode) return;
@@ -496,24 +406,6 @@ public class DittoTcpClient implements Closeable {
         return true;
     }
 
-    private static void putOptionalString(ByteBuffer buf, byte[] value) {
-        if (value == null) {
-            buf.put((byte) 0);
-            return;
-        }
-        buf.put((byte) 1);
-        buf.putLong(value.length);
-        buf.put(value);
-    }
-
-    /** Prepend a 4-byte big-endian length prefix to the payload. */
-    private static byte[] frame(byte[] payload) {
-        byte[] result = new byte[4 + payload.length];
-        ByteBuffer.wrap(result).putInt(payload.length); // big-endian by default
-        System.arraycopy(payload, 0, result, 4, payload.length);
-        return result;
-    }
-
     // ── Network I/O ───────────────────────────────────────────────────────────
 
     private void sendFrame(byte[] data) throws IOException {
@@ -560,16 +452,16 @@ public class DittoTcpClient implements Closeable {
         }
         byte[] payload = new byte[payloadLen];
         in.readFully(payload);
-        return decodeResponse(payload);
+        return Wire.decodeResponse(payload);
     }
 
-    // ── Bincode decoding ──────────────────────────────────────────────────────
+    // ── Response container ────────────────────────────────────────────────────
 
-    private enum ResponseType {
+    enum ResponseType {
         VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, WATCHING, UNWATCHED, WATCH_EVENT, PATTERN_DELETED, PATTERN_TTL_UPDATED
     }
 
-    private static final class Response {
+    static final class Response {
         ResponseType   type;
         String         key;
         byte[]         value;
@@ -580,65 +472,400 @@ public class DittoTcpClient implements Closeable {
         long           count;
     }
 
-    private static Response decodeResponse(byte[] payload) throws IOException {
-        ByteBuffer buf  = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-        int        variant = buf.getInt();
-        Response   r    = new Response();
+    // ── Protobuf wire format helper ──────────────────────────────────────────
+    //
+    // Source of truth: ditto-protocol/proto/ditto.proto (proto3, package
+    // ditto.protocol.v1). This class is hand-rolled to avoid pulling in
+    // protoc/protobuf-java; the field numbers below MUST stay in sync with
+    // ditto.proto.
 
-        switch (variant) {
-            case 0 -> { // Value { key, value, version }
-                long keyLen = buf.getLong();
-                buf.position(buf.position() + (int) keyLen); // skip key (already known)
-                long valLen = buf.getLong();
-                r.value = new byte[(int) valLen];
-                buf.get(r.value);
-                r.version = buf.getLong();
-                r.type = ResponseType.VALUE;
-            }
-            case 1 -> { // Ok { version }
-                r.version = buf.getLong();
-                r.type = ResponseType.OK;
-            }
-            case 2 -> r.type = ResponseType.DELETED;
-            case 3 -> r.type = ResponseType.NOT_FOUND;
-            case 4 -> r.type = ResponseType.PONG;
-            case 5 -> r.type = ResponseType.AUTH_OK;
-            case 6 -> { // Error { code, message }
-                int    codeIdx  = buf.getInt();
-                long   msgLen   = buf.getLong();
-                byte[] msgBytes = new byte[(int) msgLen];
-                buf.get(msgBytes);
-                r.errorCode = DittoErrorCode.fromIndex(codeIdx);
-                r.message   = new String(msgBytes, StandardCharsets.UTF_8);
-                r.type      = ResponseType.ERROR;
-            }
-            case 7 -> r.type = ResponseType.WATCHING;
-            case 8 -> r.type = ResponseType.UNWATCHED;
-            case 9 -> { // WatchEvent { key, value: Option<Bytes>, version }
-                long keyLen = buf.getLong();
-                byte[] keyBytes = new byte[(int) keyLen];
-                buf.get(keyBytes);
-                r.key = new String(keyBytes, StandardCharsets.UTF_8);
-                byte hasValue = buf.get();
-                r.hasValue = hasValue == 1;
-                if (r.hasValue) {
-                    long valLen = buf.getLong();
-                    r.value = new byte[(int) valLen];
-                    buf.get(r.value);
+    static final class Wire {
+        static final int PROTOCOL_VERSION = 1;
+
+        // Envelope field numbers
+        static final int ENV_VERSION         = 1;
+        static final int ENV_CLIENT_REQUEST  = 2;
+        static final int ENV_CLIENT_RESPONSE = 3;
+
+        // ClientRequest oneof field numbers
+        static final int REQ_GET                 = 1;
+        static final int REQ_SET                 = 2;
+        static final int REQ_DELETE              = 3;
+        static final int REQ_PING                = 4;
+        static final int REQ_AUTH                = 5;
+        static final int REQ_WATCH               = 6;
+        static final int REQ_UNWATCH             = 7;
+        static final int REQ_DELETE_BY_PATTERN   = 8;
+        static final int REQ_SET_TTL_BY_PATTERN  = 9;
+
+        // ClientResponse oneof field numbers
+        static final int RESP_VALUE                = 1;
+        static final int RESP_OK                   = 2;
+        static final int RESP_DELETED              = 3;
+        static final int RESP_NOT_FOUND            = 4;
+        static final int RESP_PONG                 = 5;
+        static final int RESP_AUTH_OK              = 6;
+        static final int RESP_ERROR                = 7;
+        static final int RESP_WATCHING             = 8;
+        static final int RESP_UNWATCHED            = 9;
+        static final int RESP_WATCH_EVENT          = 10;
+        static final int RESP_PATTERN_DELETED      = 11;
+        static final int RESP_PATTERN_TTL_UPDATED  = 12;
+
+        // Wire types
+        static final int WT_VARINT = 0;
+        static final int WT_LD     = 2;
+
+        // Inner-message field numbers
+        static final int KN_KEY        = 1;
+        static final int KN_NAMESPACE  = 2;
+        static final int PN_PATTERN    = 1;
+        static final int PN_NAMESPACE  = 2;
+        static final int SR_KEY        = 1;
+        static final int SR_VALUE      = 2;
+        static final int SR_TTL_SECS   = 3;
+        static final int SR_NAMESPACE  = 4;
+        static final int STBP_PATTERN  = 1;
+        static final int STBP_TTL_SECS = 2;
+        static final int STBP_NAMESPACE = 3;
+        static final int AUTH_TOKEN    = 1;
+        static final int VAL_KEY       = 1;
+        static final int VAL_VALUE     = 2;
+        static final int VAL_VERSION   = 3;
+        static final int VR_VERSION    = 1;
+        static final int ERR_CODE      = 1;
+        static final int ERR_MESSAGE   = 2;
+        static final int WE_KEY        = 1;
+        static final int WE_VALUE      = 2;
+        static final int WE_VERSION    = 3;
+        static final int COUNT_FIELD   = 1;
+        static final int OPT_VALUE     = 1;
+
+        private Wire() {}
+
+        // ── Writer ────────────────────────────────────────────────────────────
+
+        static final class Writer {
+            private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+
+            void varint(long v) {
+                if (v < 0) throw new IllegalArgumentException("negative varint");
+                while ((v & ~0x7FL) != 0) {
+                    buf.write((int) ((v & 0x7F) | 0x80));
+                    v >>>= 7;
                 }
-                r.version = buf.getLong();
-                r.type = ResponseType.WATCH_EVENT;
+                buf.write((int) v);
             }
-            case 10 -> { // PatternDeleted { deleted }
-                r.count = buf.getLong();
-                r.type = ResponseType.PATTERN_DELETED;
+
+            void tag(int field, int wire) { varint(((long) field << 3) | wire); }
+
+            void uint64Field(int field, long value) {
+                if (value == 0) return;
+                tag(field, WT_VARINT); varint(value);
             }
-            case 11 -> { // PatternTtlUpdated { updated }
-                r.count = buf.getLong();
-                r.type = ResponseType.PATTERN_TTL_UPDATED;
+
+            void enumField(int field, int value) {
+                if (value == 0) return;
+                tag(field, WT_VARINT); varint(value);
             }
-            default -> throw new IOException("Unknown ClientResponse variant: " + variant);
+
+            /** Length-delimited; emit only when payload non-empty. */
+            void ldField(int field, byte[] payload) {
+                if (payload.length == 0) return;
+                tag(field, WT_LD);
+                varint(payload.length);
+                buf.writeBytes(payload);
+            }
+
+            /** Always emit a length-delimited field — used for oneof presence. */
+            void ldFieldAlways(int field, byte[] payload) {
+                tag(field, WT_LD);
+                varint(payload.length);
+                if (payload.length > 0) buf.writeBytes(payload);
+            }
+
+            void stringField(int field, String value) {
+                if (value == null || value.isEmpty()) return;
+                byte[] raw = value.getBytes(StandardCharsets.UTF_8);
+                tag(field, WT_LD); varint(raw.length); buf.writeBytes(raw);
+            }
+
+            void bytesField(int field, byte[] value) {
+                if (value == null || value.length == 0) return;
+                tag(field, WT_LD); varint(value.length); buf.writeBytes(value);
+            }
+
+            byte[] toByteArray() { return buf.toByteArray(); }
         }
-        return r;
+
+        // ── Reader ────────────────────────────────────────────────────────────
+
+        static final class Reader {
+            private final byte[] buf;
+            private int off;
+            private final int end;
+
+            Reader(byte[] buf) { this(buf, 0, buf.length); }
+            Reader(byte[] buf, int off, int end) { this.buf = buf; this.off = off; this.end = end; }
+
+            int remaining() { return end - off; }
+
+            long readVarint() throws IOException {
+                long result = 0;
+                int shift = 0;
+                while (off < end) {
+                    int b = buf[off++] & 0xFF;
+                    result |= ((long) (b & 0x7F)) << shift;
+                    if ((b & 0x80) == 0) return result;
+                    shift += 7;
+                    if (shift > 70) throw new IOException("varint too long");
+                }
+                throw new IOException("truncated varint");
+            }
+
+            int readVarintAsInt() throws IOException {
+                long v = readVarint();
+                if (v > Integer.MAX_VALUE || v < 0) throw new IOException("varint out of int range: " + v);
+                return (int) v;
+            }
+
+            int[] readTag() throws IOException {
+                long t = readVarint();
+                return new int[] { (int) (t >>> 3), (int) (t & 0x7) };
+            }
+
+            byte[] readLD() throws IOException {
+                int len = readVarintAsInt();
+                if (off + len > end) throw new IOException("truncated length-delimited field");
+                byte[] out = new byte[len];
+                System.arraycopy(buf, off, out, 0, len);
+                off += len;
+                return out;
+            }
+
+            void skip(int wire) throws IOException {
+                switch (wire) {
+                    case WT_VARINT -> readVarint();
+                    case WT_LD     -> readLD();
+                    case 1         -> off += 8;  // fixed64
+                    case 5         -> off += 4;  // fixed32
+                    default        -> throw new IOException("unsupported wire type: " + wire);
+                }
+            }
+        }
+
+        // ── Inner-message encoders ───────────────────────────────────────────
+
+        private static boolean hasNamespace(String ns) {
+            return ns != null && !ns.isBlank();
+        }
+
+        static byte[] encodeOptionalString(String value) {
+            Writer w = new Writer();
+            w.stringField(OPT_VALUE, value);
+            return w.toByteArray();
+        }
+
+        static byte[] encodeOptionalUint64(long value) {
+            Writer w = new Writer();
+            w.uint64Field(OPT_VALUE, value);
+            return w.toByteArray();
+        }
+
+        static byte[] encodeKeyNamespace(String key, String namespace) {
+            Writer w = new Writer();
+            w.stringField(KN_KEY, key);
+            if (hasNamespace(namespace)) {
+                w.ldField(KN_NAMESPACE, encodeOptionalString(namespace));
+            }
+            return w.toByteArray();
+        }
+
+        static byte[] encodePatternNamespace(String pattern, String namespace) {
+            Writer w = new Writer();
+            w.stringField(PN_PATTERN, pattern);
+            if (hasNamespace(namespace)) {
+                w.ldField(PN_NAMESPACE, encodeOptionalString(namespace));
+            }
+            return w.toByteArray();
+        }
+
+        static byte[] encodeSetRequest(String key, byte[] value, long ttlSecs, String namespace) {
+            Writer w = new Writer();
+            w.stringField(SR_KEY, key);
+            w.bytesField(SR_VALUE, value);
+            if (ttlSecs > 0) {
+                w.ldField(SR_TTL_SECS, encodeOptionalUint64(ttlSecs));
+            }
+            if (hasNamespace(namespace)) {
+                w.ldField(SR_NAMESPACE, encodeOptionalString(namespace));
+            }
+            return w.toByteArray();
+        }
+
+        static byte[] encodeSetTtlByPatternRequest(String pattern, long ttlSecs, String namespace) {
+            Writer w = new Writer();
+            w.stringField(STBP_PATTERN, pattern);
+            if (ttlSecs > 0) {
+                w.ldField(STBP_TTL_SECS, encodeOptionalUint64(ttlSecs));
+            }
+            if (hasNamespace(namespace)) {
+                w.ldField(STBP_NAMESPACE, encodeOptionalString(namespace));
+            }
+            return w.toByteArray();
+        }
+
+        static byte[] encodeAuthRequest(String token) {
+            Writer w = new Writer();
+            w.stringField(AUTH_TOKEN, token);
+            return w.toByteArray();
+        }
+
+        // ── ClientRequest envelope wrapper ───────────────────────────────────
+
+        static byte[] wrapClientRequest(int variantField, byte[] inner) {
+            Writer reqWriter = new Writer();
+            reqWriter.ldFieldAlways(variantField, inner);
+            byte[] requestBytes = reqWriter.toByteArray();
+
+            Writer envWriter = new Writer();
+            envWriter.enumField(ENV_VERSION, PROTOCOL_VERSION);
+            envWriter.ldFieldAlways(ENV_CLIENT_REQUEST, requestBytes);
+            byte[] envelope = envWriter.toByteArray();
+
+            byte[] out = new byte[4 + envelope.length];
+            out[0] = (byte) ((envelope.length >>> 24) & 0xFF);
+            out[1] = (byte) ((envelope.length >>> 16) & 0xFF);
+            out[2] = (byte) ((envelope.length >>> 8)  & 0xFF);
+            out[3] = (byte) (envelope.length & 0xFF);
+            System.arraycopy(envelope, 0, out, 4, envelope.length);
+            return out;
+        }
+
+        // ── Decoder ──────────────────────────────────────────────────────────
+
+        static Response decodeResponse(byte[] payload) throws IOException {
+            Reader env = new Reader(payload);
+            byte[] responseBytes = null;
+            long version = 0;
+            while (env.remaining() > 0) {
+                int[] t = env.readTag();
+                int field = t[0], wire = t[1];
+                if (field == ENV_VERSION && wire == WT_VARINT) {
+                    version = env.readVarint();
+                } else if (field == ENV_CLIENT_RESPONSE && wire == WT_LD) {
+                    responseBytes = env.readLD();
+                } else {
+                    env.skip(wire);
+                }
+            }
+            if (version != 0 && version != PROTOCOL_VERSION) {
+                throw new IOException("unsupported protocol version: " + version);
+            }
+            if (responseBytes == null) {
+                throw new IOException("Envelope is missing client_response payload");
+            }
+
+            Reader r = new Reader(responseBytes);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (wire != WT_LD) { r.skip(wire); continue; }
+                byte[] inner = r.readLD();
+                Response out = new Response();
+                switch (field) {
+                    case RESP_VALUE -> { decodeValue(inner, out);   out.type = ResponseType.VALUE;        return out; }
+                    case RESP_OK -> {    decodeOk(inner, out);      out.type = ResponseType.OK;           return out; }
+                    case RESP_DELETED -> {                          out.type = ResponseType.DELETED;      return out; }
+                    case RESP_NOT_FOUND -> {                        out.type = ResponseType.NOT_FOUND;    return out; }
+                    case RESP_PONG -> {                             out.type = ResponseType.PONG;         return out; }
+                    case RESP_AUTH_OK -> {                          out.type = ResponseType.AUTH_OK;      return out; }
+                    case RESP_ERROR -> { decodeError(inner, out);   out.type = ResponseType.ERROR;        return out; }
+                    case RESP_WATCHING -> {                         out.type = ResponseType.WATCHING;     return out; }
+                    case RESP_UNWATCHED -> {                        out.type = ResponseType.UNWATCHED;    return out; }
+                    case RESP_WATCH_EVENT -> { decodeWatchEvent(inner, out); out.type = ResponseType.WATCH_EVENT; return out; }
+                    case RESP_PATTERN_DELETED -> {     out.count = decodeCount(inner); out.type = ResponseType.PATTERN_DELETED;     return out; }
+                    case RESP_PATTERN_TTL_UPDATED -> { out.count = decodeCount(inner); out.type = ResponseType.PATTERN_TTL_UPDATED; return out; }
+                    default -> {} // unknown variant — keep scanning
+                }
+            }
+            throw new IOException("ClientResponse oneof has no active field");
+        }
+
+        private static void decodeValue(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == VAL_KEY && wire == WT_LD)        out.key     = new String(r.readLD(), StandardCharsets.UTF_8);
+                else if (field == VAL_VALUE && wire == WT_LD) out.value   = r.readLD();
+                else if (field == VAL_VERSION && wire == WT_VARINT) out.version = r.readVarint();
+                else r.skip(wire);
+            }
+            if (out.value == null) out.value = new byte[0];
+        }
+
+        private static void decodeOk(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == VR_VERSION && wire == WT_VARINT) out.version = r.readVarint();
+                else r.skip(wire);
+            }
+        }
+
+        private static void decodeError(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            int codeIdx = 0;
+            String message = "";
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == ERR_CODE && wire == WT_VARINT)        codeIdx = r.readVarintAsInt();
+                else if (field == ERR_MESSAGE && wire == WT_LD)    message = new String(r.readLD(), StandardCharsets.UTF_8);
+                else r.skip(wire);
+            }
+            out.errorCode = DittoErrorCode.fromIndex(codeIdx);
+            out.message = message;
+        }
+
+        private static void decodeWatchEvent(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == WE_KEY && wire == WT_LD)        out.key = new String(r.readLD(), StandardCharsets.UTF_8);
+                else if (field == WE_VALUE && wire == WT_LD) {
+                    out.value = decodeOptionalBytes(r.readLD());
+                    out.hasValue = true;
+                } else if (field == WE_VERSION && wire == WT_VARINT) out.version = r.readVarint();
+                else r.skip(wire);
+            }
+        }
+
+        private static byte[] decodeOptionalBytes(byte[] buf) throws IOException {
+            Reader r = new Reader(buf);
+            byte[] out = new byte[0];
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == OPT_VALUE && wire == WT_LD) out = r.readLD();
+                else r.skip(wire);
+            }
+            return out;
+        }
+
+        private static long decodeCount(byte[] buf) throws IOException {
+            Reader r = new Reader(buf);
+            long count = 0;
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == COUNT_FIELD && wire == WT_VARINT) count = r.readVarint();
+                else r.skip(wire);
+            }
+            return count;
+        }
     }
 }

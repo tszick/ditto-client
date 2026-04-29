@@ -10,10 +10,12 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ditto_client import DittoTcpClient
-
-
-def frame(payload: bytes) -> bytes:
-    return struct.pack(">I", len(payload)) + payload
+from ditto_client.wire import (
+    REQUEST_FIELDS,
+    RESPONSE_FIELDS,
+    decode_client_request_variant,
+    frame_client_response,
+)
 
 
 class TcpReconnectTests(unittest.TestCase):
@@ -44,13 +46,14 @@ class TcpReconnectTests(unittest.TestCase):
                 def recv_variant(conn: socket.socket) -> int:
                     payload_len = struct.unpack(">I", recv_exact(conn, 4))[0]
                     payload = recv_exact(conn, payload_len)
-                    return struct.unpack_from("<I", payload, 0)[0]
+                    field, _ = decode_client_request_variant(payload)
+                    return field
 
                 def mock_server() -> None:
                     try:
                         conn1, _ = server.accept()
                         try:
-                            self.assertEqual(3, recv_variant(conn1))  # ping
+                            self.assertEqual(REQUEST_FIELDS["PING"], recv_variant(conn1))
                         finally:
                             conn1.close()
 
@@ -63,8 +66,8 @@ class TcpReconnectTests(unittest.TestCase):
                             return
 
                         with conn2:
-                            self.assertEqual(3, recv_variant(conn2))  # retried ping
-                            conn2.sendall(frame(struct.pack("<I", 4)))  # pong
+                            self.assertEqual(REQUEST_FIELDS["PING"], recv_variant(conn2))
+                            conn2.sendall(frame_client_response(RESPONSE_FIELDS["PONG"], b""))
                     except Exception as exc:  # pragma: no cover
                         errors.append(exc)
                     finally:

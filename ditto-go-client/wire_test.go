@@ -1,14 +1,12 @@
 package ditto
 
 import (
-	"bytes"
-	"encoding/binary"
 	"testing"
 )
 
 func TestDecodeResponseErrorCodeMappingIncludesRateLimitAndCircuitOpen(t *testing.T) {
 	tests := []struct {
-		idx  uint32
+		idx  int
 		want string
 	}{
 		{idx: 7, want: ErrRateLimited},
@@ -18,14 +16,12 @@ func TestDecodeResponseErrorCodeMappingIncludesRateLimitAndCircuitOpen(t *testin
 	}
 
 	for _, tc := range tests {
-		var payload bytes.Buffer
-		_ = binary.Write(&payload, binary.LittleEndian, uint32(6))
-		_ = binary.Write(&payload, binary.LittleEndian, tc.idx)
-		msg := []byte("x")
-		_ = binary.Write(&payload, binary.LittleEndian, uint64(len(msg)))
-		_, _ = payload.Write(msg)
+		framed := frameClientResponse(rspError, encodeErrorResponseInner(tc.idx, "x"))
+		// frameClientResponse prepends a 4-byte BE length; decodeResponse expects the
+		// envelope payload, so strip the length prefix here.
+		payload := framed[4:]
 
-		resp, err := decodeResponse(payload.Bytes())
+		resp, err := decodeResponse(payload)
 		if err != nil {
 			t.Fatalf("decodeResponse failed: %v", err)
 		}
@@ -38,26 +34,35 @@ func TestDecodeResponseErrorCodeMappingIncludesRateLimitAndCircuitOpen(t *testin
 	}
 }
 
+func TestDecodeResponseFallsBackToInternalErrorForUnknownCodeIndex(t *testing.T) {
+	framed := frameClientResponse(rspError, encodeErrorResponseInner(99, "mystery"))
+	resp, err := decodeResponse(framed[4:])
+	if err != nil {
+		t.Fatalf("decodeResponse failed: %v", err)
+	}
+	if resp.kind != respError {
+		t.Fatalf("unexpected kind: %v", resp.kind)
+	}
+	if resp.code != ErrInternalError {
+		t.Fatalf("unknown index mapped to %q, want %q", resp.code, ErrInternalError)
+	}
+	if resp.message != "mystery" {
+		t.Fatalf("unexpected message: %q", resp.message)
+	}
+}
+
 func TestDecodeResponseWatchEventWithNoneAndSomeValue(t *testing.T) {
-	buildPayload := func(hasValue bool) []byte {
-		var payload bytes.Buffer
-		_ = binary.Write(&payload, binary.LittleEndian, uint32(9))
-		key := []byte("watched-key")
-		_ = binary.Write(&payload, binary.LittleEndian, uint64(len(key)))
-		_, _ = payload.Write(key)
+	build := func(hasValue bool) []byte {
+		var inner []byte
 		if hasValue {
-			_ = payload.WriteByte(1)
-			val := []byte("value")
-			_ = binary.Write(&payload, binary.LittleEndian, uint64(len(val)))
-			_, _ = payload.Write(val)
+			inner = encodeWatchEventInner("watched-key", []byte("value"), true, 42)
 		} else {
-			_ = payload.WriteByte(0)
+			inner = encodeWatchEventInner("watched-key", nil, false, 42)
 		}
-		_ = binary.Write(&payload, binary.LittleEndian, uint64(42))
-		return payload.Bytes()
+		return frameClientResponse(rspWatchEvent, inner)[4:]
 	}
 
-	respNone, err := decodeResponse(buildPayload(false))
+	respNone, err := decodeResponse(build(false))
 	if err != nil {
 		t.Fatalf("decodeResponse (none) failed: %v", err)
 	}
@@ -65,7 +70,7 @@ func TestDecodeResponseWatchEventWithNoneAndSomeValue(t *testing.T) {
 		t.Fatalf("unexpected watch none response: kind=%v hasValue=%v", respNone.kind, respNone.hasValue)
 	}
 
-	respSome, err := decodeResponse(buildPayload(true))
+	respSome, err := decodeResponse(build(true))
 	if err != nil {
 		t.Fatalf("decodeResponse (some) failed: %v", err)
 	}

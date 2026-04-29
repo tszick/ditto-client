@@ -1,7 +1,6 @@
 package ditto
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"net"
@@ -27,6 +26,20 @@ func TestTCPClientAutoReconnectPing(t *testing.T) {
 			}
 			defer ln.Close()
 
+			readVariant := func(conn net.Conn) (int, error) {
+				head := make([]byte, 4)
+				if _, err := io.ReadFull(conn, head); err != nil {
+					return 0, err
+				}
+				n := binary.BigEndian.Uint32(head)
+				payload := make([]byte, n)
+				if _, err := io.ReadFull(conn, payload); err != nil {
+					return 0, err
+				}
+				field, _, err := decodeClientRequestVariant(payload)
+				return field, err
+			}
+
 			done := make(chan error, 1)
 			go func() {
 				// First connection: read request and drop connection before response.
@@ -35,15 +48,7 @@ func TestTCPClientAutoReconnectPing(t *testing.T) {
 					done <- err
 					return
 				}
-				head := make([]byte, 4)
-				if _, err := io.ReadFull(conn1, head); err != nil {
-					_ = conn1.Close()
-					done <- err
-					return
-				}
-				n := binary.BigEndian.Uint32(head)
-				payload := make([]byte, n)
-				if _, err := io.ReadFull(conn1, payload); err != nil {
+				if _, err := readVariant(conn1); err != nil {
 					_ = conn1.Close()
 					done <- err
 					return
@@ -64,24 +69,11 @@ func TestTCPClientAutoReconnectPing(t *testing.T) {
 					return
 				}
 				defer conn2.Close()
-				if _, err := io.ReadFull(conn2, head); err != nil {
+				if _, err := readVariant(conn2); err != nil {
 					done <- err
 					return
 				}
-				n = binary.BigEndian.Uint32(head)
-				payload = make([]byte, n)
-				if _, err := io.ReadFull(conn2, payload); err != nil {
-					done <- err
-					return
-				}
-
-				var b bytes.Buffer
-				_ = binary.Write(&b, binary.LittleEndian, uint32(4)) // Pong
-				reply := b.Bytes()
-				frame := make([]byte, 4+len(reply))
-				binary.BigEndian.PutUint32(frame[:4], uint32(len(reply)))
-				copy(frame[4:], reply)
-				_, err = conn2.Write(frame)
+				_, err = conn2.Write(frameClientResponse(rspPong, nil))
 				done <- err
 			}()
 

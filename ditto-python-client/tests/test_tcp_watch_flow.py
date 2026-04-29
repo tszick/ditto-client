@@ -10,14 +10,14 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ditto_client import DittoTcpClient
-
-
-def frame(payload: bytes) -> bytes:
-    return struct.pack(">I", len(payload)) + payload
-
-
-def u64(v: int) -> bytes:
-    return struct.pack("<Q", v)
+from ditto_client.wire import (
+    REQUEST_FIELDS,
+    RESPONSE_FIELDS,
+    decode_client_request_variant,
+    encode_version_response_inner,
+    encode_watch_event_inner,
+    frame_client_response,
+)
 
 
 class TcpWatchFlowTests(unittest.TestCase):
@@ -41,36 +41,24 @@ class TcpWatchFlowTests(unittest.TestCase):
             head = recv_exact(conn, 4)
             payload_len = struct.unpack(">I", head)[0]
             payload = recv_exact(conn, payload_len)
-            return struct.unpack_from("<I", payload, 0)[0]
-
-        def send_simple(conn: socket.socket, variant: int) -> None:
-            conn.sendall(frame(struct.pack("<I", variant)))
-
-        def send_ok(conn: socket.socket, version: int) -> None:
-            conn.sendall(frame(struct.pack("<IQ", 1, version)))
-
-        def send_watch_event(conn: socket.socket, key: str, value: bytes, version: int) -> None:
-            payload = (
-                struct.pack("<I", 9)
-                + u64(len(key.encode("utf-8")))
-                + key.encode("utf-8")
-                + struct.pack("B", 1)
-                + u64(len(value))
-                + value
-                + u64(version)
-            )
-            conn.sendall(frame(payload))
+            field, _ = decode_client_request_variant(payload)
+            return field
 
         def mock_server() -> None:
             conn, _ = server.accept()
             try:
-                self.assertEqual(5, recv_variant(conn))
-                send_simple(conn, 7)
-                self.assertEqual(1, recv_variant(conn))
-                send_ok(conn, 1)
-                send_watch_event(conn, "k", b"value", 2)
-                self.assertEqual(6, recv_variant(conn))
-                send_simple(conn, 8)
+                self.assertEqual(REQUEST_FIELDS["WATCH"], recv_variant(conn))
+                conn.sendall(frame_client_response(RESPONSE_FIELDS["WATCHING"], b""))
+
+                self.assertEqual(REQUEST_FIELDS["SET"], recv_variant(conn))
+                conn.sendall(frame_client_response(RESPONSE_FIELDS["OK"], encode_version_response_inner(1)))
+                conn.sendall(frame_client_response(
+                    RESPONSE_FIELDS["WATCH_EVENT"],
+                    encode_watch_event_inner("k", b"value", 2),
+                ))
+
+                self.assertEqual(REQUEST_FIELDS["UNWATCH"], recv_variant(conn))
+                conn.sendall(frame_client_response(RESPONSE_FIELDS["UNWATCHED"], b""))
             except Exception as exc:  # pragma: no cover - surfaced via thread join check
                 errors.append(exc)
             finally:

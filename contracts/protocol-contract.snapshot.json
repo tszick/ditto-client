@@ -1,220 +1,1988 @@
 {
   "enums": {
-    "AdminRequest": [
-      "Describe",
-      "GetProperty",
-      "SetProperty",
-      "ListKeys",
-      "GetStats",
-      "GetKeyInfo",
-      "SetKeyProperty",
-      "FlushCache",
-      "ClusterStatus",
-      "BackupNow",
-      "RestoreLatestSnapshot",
-      "SetKeysTtl"
-    ],
-    "AdminResponse": [
-      "Properties",
-      "Keys",
-      "Stats",
-      "KeyInfo",
-      "KeyPropertyUpdated",
-      "Flushed",
-      "ClusterView",
-      "BackupResult",
-      "RestoreResult",
-      "TtlUpdated",
-      "Ok",
-      "NotFound",
-      "Error"
-    ],
-    "ClientRequest": [
-      "Get",
-      "Set",
-      "Delete",
-      "Ping",
-      "Auth",
-      "Watch",
-      "Unwatch",
-      "DeleteByPattern",
-      "SetTtlByPattern"
-    ],
-    "ClientResponse": [
-      "Value",
-      "Ok",
-      "Deleted",
-      "NotFound",
-      "Pong",
-      "AuthOk",
-      "Error",
-      "Watching",
-      "Unwatched",
-      "WatchEvent",
-      "PatternDeleted",
-      "PatternTtlUpdated"
-    ],
-    "ClusterMessage": [
-      "Prepare",
-      "PrepareAck",
-      "Commit",
-      "CommitAck",
-      "Forward",
-      "RequestLog",
-      "LogEntries",
-      "Synced",
-      "ForwardResponse",
-      "ForcePrimary",
-      "Admin",
-      "AdminResponse"
-    ],
     "ErrorCode": [
-      "NodeInactive",
-      "NoQuorum",
-      "KeyNotFound",
-      "InternalError",
-      "WriteTimeout",
-      "ValueTooLarge",
-      "KeyLimitReached",
-      "RateLimited",
-      "CircuitOpen",
-      "NamespaceQuotaExceeded",
-      "AuthFailed"
-    ],
-    "GossipMessage": [
-      "Heartbeat",
-      "ActiveSetUpdate"
+      "ERROR_CODE_NODE_INACTIVE",
+      "ERROR_CODE_NO_QUORUM",
+      "ERROR_CODE_KEY_NOT_FOUND",
+      "ERROR_CODE_INTERNAL_ERROR",
+      "ERROR_CODE_WRITE_TIMEOUT",
+      "ERROR_CODE_VALUE_TOO_LARGE",
+      "ERROR_CODE_KEY_LIMIT_REACHED",
+      "ERROR_CODE_RATE_LIMITED",
+      "ERROR_CODE_CIRCUIT_OPEN",
+      "ERROR_CODE_NAMESPACE_QUOTA_EXCEEDED",
+      "ERROR_CODE_AUTH_FAILED"
     ],
     "NodeStatus": [
-      "Active",
-      "Syncing",
-      "Offline",
-      "Inactive"
+      "NODE_STATUS_ACTIVE",
+      "NODE_STATUS_SYNCING",
+      "NODE_STATUS_OFFLINE",
+      "NODE_STATUS_INACTIVE"
     ]
   },
-  "protocol_version": 1,
-  "source": "ditto-protocol/src/lib.rs",
-  "structs": {
+  "messages": {
+    "ActiveSetUpdate": [
+      {
+        "name": "active_nodes",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "NodeInfo"
+      }
+    ],
+    "AdminRequest": [
+      {
+        "name": "describe",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "Empty"
+      },
+      {
+        "name": "get_property",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "Named"
+      },
+      {
+        "name": "set_property",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "PropertyUpdate"
+      },
+      {
+        "name": "list_keys",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "ListKeys"
+      },
+      {
+        "name": "get_stats",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "Empty"
+      },
+      {
+        "name": "get_key_info",
+        "oneof": true,
+        "repeated": false,
+        "tag": 6,
+        "type": "KeyOnly"
+      },
+      {
+        "name": "set_key_property",
+        "oneof": true,
+        "repeated": false,
+        "tag": 7,
+        "type": "KeyPropertyUpdate"
+      },
+      {
+        "name": "flush_cache",
+        "oneof": true,
+        "repeated": false,
+        "tag": 8,
+        "type": "Empty"
+      },
+      {
+        "name": "cluster_status",
+        "oneof": true,
+        "repeated": false,
+        "tag": 9,
+        "type": "Empty"
+      },
+      {
+        "name": "backup_now",
+        "oneof": true,
+        "repeated": false,
+        "tag": 10,
+        "type": "Empty"
+      },
+      {
+        "name": "restore_latest_snapshot",
+        "oneof": true,
+        "repeated": false,
+        "tag": 11,
+        "type": "Empty"
+      },
+      {
+        "name": "set_keys_ttl",
+        "oneof": true,
+        "repeated": false,
+        "tag": 12,
+        "type": "SetKeysTtl"
+      }
+    ],
+    "AdminResponse": [
+      {
+        "name": "properties",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "Properties"
+      },
+      {
+        "name": "keys",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "Keys"
+      },
+      {
+        "name": "stats",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "NodeStats"
+      },
+      {
+        "name": "key_info",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "KeyInfo"
+      },
+      {
+        "name": "key_property_updated",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "Empty"
+      },
+      {
+        "name": "flushed",
+        "oneof": true,
+        "repeated": false,
+        "tag": 6,
+        "type": "Empty"
+      },
+      {
+        "name": "cluster_view",
+        "oneof": true,
+        "repeated": false,
+        "tag": 7,
+        "type": "ClusterView"
+      },
+      {
+        "name": "backup_result",
+        "oneof": true,
+        "repeated": false,
+        "tag": 8,
+        "type": "BackupResult"
+      },
+      {
+        "name": "restore_result",
+        "oneof": true,
+        "repeated": false,
+        "tag": 9,
+        "type": "RestoreResult"
+      },
+      {
+        "name": "ttl_updated",
+        "oneof": true,
+        "repeated": false,
+        "tag": 10,
+        "type": "CountResponse"
+      },
+      {
+        "name": "ok",
+        "oneof": true,
+        "repeated": false,
+        "tag": 11,
+        "type": "Empty"
+      },
+      {
+        "name": "not_found",
+        "oneof": true,
+        "repeated": false,
+        "tag": 12,
+        "type": "Empty"
+      },
+      {
+        "name": "error",
+        "oneof": true,
+        "repeated": false,
+        "tag": 13,
+        "type": "ErrorMessage"
+      }
+    ],
+    "AuthRequest": [
+      {
+        "name": "token",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "BackupResult": [
+      {
+        "name": "path",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      }
+    ],
+    "ClientRequest": [
+      {
+        "name": "get",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "KeyNamespace"
+      },
+      {
+        "name": "set",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "SetRequest"
+      },
+      {
+        "name": "delete",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "KeyNamespace"
+      },
+      {
+        "name": "ping",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "Empty"
+      },
+      {
+        "name": "auth",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "AuthRequest"
+      },
+      {
+        "name": "watch",
+        "oneof": true,
+        "repeated": false,
+        "tag": 6,
+        "type": "KeyNamespace"
+      },
+      {
+        "name": "unwatch",
+        "oneof": true,
+        "repeated": false,
+        "tag": 7,
+        "type": "KeyNamespace"
+      },
+      {
+        "name": "delete_by_pattern",
+        "oneof": true,
+        "repeated": false,
+        "tag": 8,
+        "type": "PatternNamespace"
+      },
+      {
+        "name": "set_ttl_by_pattern",
+        "oneof": true,
+        "repeated": false,
+        "tag": 9,
+        "type": "SetTtlByPatternRequest"
+      }
+    ],
+    "ClientResponse": [
+      {
+        "name": "value",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "ValueResponse"
+      },
+      {
+        "name": "ok",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "VersionResponse"
+      },
+      {
+        "name": "deleted",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "Empty"
+      },
+      {
+        "name": "not_found",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "Empty"
+      },
+      {
+        "name": "pong",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "Empty"
+      },
+      {
+        "name": "auth_ok",
+        "oneof": true,
+        "repeated": false,
+        "tag": 6,
+        "type": "Empty"
+      },
+      {
+        "name": "error",
+        "oneof": true,
+        "repeated": false,
+        "tag": 7,
+        "type": "ErrorResponse"
+      },
+      {
+        "name": "watching",
+        "oneof": true,
+        "repeated": false,
+        "tag": 8,
+        "type": "Empty"
+      },
+      {
+        "name": "unwatched",
+        "oneof": true,
+        "repeated": false,
+        "tag": 9,
+        "type": "Empty"
+      },
+      {
+        "name": "watch_event",
+        "oneof": true,
+        "repeated": false,
+        "tag": 10,
+        "type": "WatchEvent"
+      },
+      {
+        "name": "pattern_deleted",
+        "oneof": true,
+        "repeated": false,
+        "tag": 11,
+        "type": "CountResponse"
+      },
+      {
+        "name": "pattern_ttl_updated",
+        "oneof": true,
+        "repeated": false,
+        "tag": 12,
+        "type": "CountResponse"
+      }
+    ],
+    "ClusterMessage": [
+      {
+        "name": "prepare",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "Prepare"
+      },
+      {
+        "name": "prepare_ack",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "LogAck"
+      },
+      {
+        "name": "commit",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "Commit"
+      },
+      {
+        "name": "commit_ack",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "LogAck"
+      },
+      {
+        "name": "forward",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "Forward"
+      },
+      {
+        "name": "request_log",
+        "oneof": true,
+        "repeated": false,
+        "tag": 6,
+        "type": "RequestLog"
+      },
+      {
+        "name": "log_entries",
+        "oneof": true,
+        "repeated": false,
+        "tag": 7,
+        "type": "LogEntries"
+      },
+      {
+        "name": "synced",
+        "oneof": true,
+        "repeated": false,
+        "tag": 8,
+        "type": "Synced"
+      },
+      {
+        "name": "forward_response",
+        "oneof": true,
+        "repeated": false,
+        "tag": 9,
+        "type": "ClientResponse"
+      },
+      {
+        "name": "force_primary",
+        "oneof": true,
+        "repeated": false,
+        "tag": 10,
+        "type": "ForcePrimary"
+      },
+      {
+        "name": "admin",
+        "oneof": true,
+        "repeated": false,
+        "tag": 11,
+        "type": "AdminRequest"
+      },
+      {
+        "name": "admin_response",
+        "oneof": true,
+        "repeated": false,
+        "tag": 12,
+        "type": "AdminResponse"
+      }
+    ],
+    "ClusterView": [
+      {
+        "name": "nodes",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "NodeInfo"
+      }
+    ],
+    "Commit": [
+      {
+        "name": "log_index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      }
+    ],
+    "CountResponse": [
+      {
+        "name": "count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      }
+    ],
+    "Empty": [],
+    "Envelope": [
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint32"
+      },
+      {
+        "name": "client_request",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "ClientRequest"
+      },
+      {
+        "name": "client_response",
+        "oneof": true,
+        "repeated": false,
+        "tag": 3,
+        "type": "ClientResponse"
+      },
+      {
+        "name": "cluster_message",
+        "oneof": true,
+        "repeated": false,
+        "tag": 4,
+        "type": "ClusterMessage"
+      },
+      {
+        "name": "gossip_message",
+        "oneof": true,
+        "repeated": false,
+        "tag": 5,
+        "type": "GossipMessage"
+      }
+    ],
+    "ErrorMessage": [
+      {
+        "name": "message",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "ErrorResponse": [
+      {
+        "name": "code",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "ErrorCode"
+      },
+      {
+        "name": "message",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      }
+    ],
+    "ForcePrimary": [
+      {
+        "name": "node_id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "Forward": [
+      {
+        "name": "request",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "ClientRequest"
+      },
+      {
+        "name": "origin_node",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      }
+    ],
+    "GossipMessage": [
+      {
+        "name": "heartbeat",
+        "oneof": true,
+        "repeated": false,
+        "tag": 1,
+        "type": "Heartbeat"
+      },
+      {
+        "name": "active_set_update",
+        "oneof": true,
+        "repeated": false,
+        "tag": 2,
+        "type": "ActiveSetUpdate"
+      }
+    ],
+    "Heartbeat": [
+      {
+        "name": "node_id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "addr",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      },
+      {
+        "name": "cluster_port",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint32"
+      },
+      {
+        "name": "status",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "NodeStatus"
+      },
+      {
+        "name": "last_applied",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      }
+    ],
     "HotKeyUsage": [
-      "key",
-      "request_total"
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "request_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      }
+    ],
+    "KeyInfo": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "bytes"
+      },
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      },
+      {
+        "name": "ttl_remaining_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "freq_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      },
+      {
+        "name": "compressed",
+        "oneof": false,
+        "repeated": false,
+        "tag": 6,
+        "type": "bool"
+      }
+    ],
+    "KeyNamespace": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "OptionalString"
+      }
+    ],
+    "KeyOnly": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "KeyPropertyUpdate": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "string"
+      }
+    ],
+    "Keys": [
+      {
+        "name": "keys",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "ListKeys": [
+      {
+        "name": "pattern",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "OptionalString"
+      }
+    ],
+    "LogAck": [
+      {
+        "name": "log_index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      },
+      {
+        "name": "node_id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      }
+    ],
+    "LogEntries": [
+      {
+        "name": "entries",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "LogEntry"
+      }
+    ],
+    "LogEntry": [
+      {
+        "name": "index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      },
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "OptionalBytes"
+      },
+      {
+        "name": "ttl_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "ts_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      }
+    ],
+    "Named": [
+      {
+        "name": "name",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
     ],
     "NamespaceLatencySummary": [
-      "namespace",
-      "request_total",
-      "latency_p95_estimate_ms",
-      "latency_p99_estimate_ms"
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "request_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      },
+      {
+        "name": "latency_p95_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "latency_p99_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalUint64"
+      }
     ],
     "NamespaceQuotaUsage": [
-      "namespace",
-      "key_count",
-      "quota_limit",
-      "usage_pct",
-      "remaining_keys"
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "key_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      },
+      {
+        "name": "quota_limit",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      },
+      {
+        "name": "usage_pct",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "uint64"
+      },
+      {
+        "name": "remaining_keys",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      }
+    ],
+    "NodeInfo": [
+      {
+        "name": "id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "addr",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      },
+      {
+        "name": "cluster_port",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint32"
+      },
+      {
+        "name": "status",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "NodeStatus"
+      },
+      {
+        "name": "last_applied",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      }
     ],
     "NodeStats": [
-      "node_id",
-      "status",
-      "is_primary",
-      "committed_index",
-      "key_count",
-      "memory_used_bytes",
-      "memory_max_bytes",
-      "evictions",
-      "hit_count",
-      "miss_count",
-      "uptime_secs",
-      "value_size_limit_bytes",
-      "max_keys_limit",
-      "compression_enabled",
-      "compression_threshold_bytes",
-      "node_name",
-      "backup_dir_bytes",
-      "snapshot_last_load_path",
-      "snapshot_last_load_duration_ms",
-      "snapshot_last_load_entries",
-      "snapshot_last_load_age_secs",
-      "snapshot_restore_attempt_total",
-      "snapshot_restore_success_total",
-      "snapshot_restore_failure_total",
-      "snapshot_restore_not_found_total",
-      "snapshot_restore_policy_block_total",
-      "snapshot_restore_success_ratio_pct",
-      "persistence_platform_allowed",
-      "persistence_runtime_enabled",
-      "persistence_enabled",
-      "persistence_backup_enabled",
-      "persistence_export_enabled",
-      "persistence_import_enabled",
-      "tenancy_enabled",
-      "tenancy_default_namespace",
-      "tenancy_max_keys_per_namespace",
-      "rate_limit_enabled",
-      "rate_limited_requests_total",
-      "circuit_breaker_enabled",
-      "hot_key_enabled",
-      "hot_key_adaptive_waiters_enabled",
-      "read_repair_enabled",
-      "hot_key_coalesced_hits_total",
-      "hot_key_fallback_exec_total",
-      "hot_key_wait_timeout_total",
-      "hot_key_stale_served_total",
-      "hot_key_inflight_keys",
-      "hot_key_stale_cache_entries",
-      "hot_key_adaptive_state_keys",
-      "hot_key_adaptive_limit_increase_total",
-      "hot_key_adaptive_limit_decrease_total",
-      "read_repair_trigger_total",
-      "read_repair_success_total",
-      "read_repair_throttled_total",
-      "read_repair_budget_exhausted_total",
-      "namespace_quota_reject_total",
-      "namespace_quota_reject_rate_per_min",
-      "namespace_quota_reject_trend",
-      "namespace_quota_top_usage",
-      "namespace_latency_top",
-      "hot_key_top_usage",
-      "anti_entropy_runs_total",
-      "anti_entropy_repair_trigger_total",
-      "anti_entropy_repair_throttled_total",
-      "anti_entropy_last_detected_lag",
-      "anti_entropy_key_checks_total",
-      "anti_entropy_key_mismatch_total",
-      "anti_entropy_full_reconcile_runs_total",
-      "anti_entropy_full_reconcile_key_checks_total",
-      "anti_entropy_full_reconcile_mismatch_total",
-      "anti_entropy_budget_exhausted_total",
-      "mixed_version_probe_runs_total",
-      "mixed_version_peers_detected_total",
-      "mixed_version_probe_errors_total",
-      "mixed_version_last_detected_peer_count",
-      "circuit_breaker_state",
-      "circuit_breaker_open_total",
-      "circuit_breaker_reject_total",
-      "client_requests_total",
-      "client_requests_tcp_total",
-      "client_requests_http_total",
-      "client_requests_internal_total",
-      "client_request_latency_le_1ms_total",
-      "client_request_latency_le_5ms_total",
-      "client_request_latency_le_20ms_total",
-      "client_request_latency_le_100ms_total",
-      "client_request_latency_le_500ms_total",
-      "client_request_latency_gt_500ms_total",
-      "client_latency_p50_estimate_ms",
-      "client_latency_p90_estimate_ms",
-      "client_latency_p95_estimate_ms",
-      "client_latency_p99_estimate_ms",
-      "client_error_total",
-      "client_errors_tcp_total",
-      "client_errors_http_total",
-      "client_errors_internal_total",
-      "client_error_auth_total",
-      "client_error_throttle_total",
-      "client_error_availability_total",
-      "client_error_validation_total",
-      "client_error_internal_total",
-      "client_error_other_total"
+      {
+        "name": "node_id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "NodeStatus"
+      },
+      {
+        "name": "is_primary",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "bool"
+      },
+      {
+        "name": "committed_index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "uint64"
+      },
+      {
+        "name": "key_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 5,
+        "type": "uint64"
+      },
+      {
+        "name": "memory_used_bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 6,
+        "type": "uint64"
+      },
+      {
+        "name": "memory_max_bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 7,
+        "type": "uint64"
+      },
+      {
+        "name": "evictions",
+        "oneof": false,
+        "repeated": false,
+        "tag": 8,
+        "type": "uint64"
+      },
+      {
+        "name": "hit_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 9,
+        "type": "uint64"
+      },
+      {
+        "name": "miss_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 10,
+        "type": "uint64"
+      },
+      {
+        "name": "uptime_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 11,
+        "type": "uint64"
+      },
+      {
+        "name": "value_size_limit_bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 12,
+        "type": "uint64"
+      },
+      {
+        "name": "max_keys_limit",
+        "oneof": false,
+        "repeated": false,
+        "tag": 13,
+        "type": "uint64"
+      },
+      {
+        "name": "compression_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 14,
+        "type": "bool"
+      },
+      {
+        "name": "compression_threshold_bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 15,
+        "type": "uint64"
+      },
+      {
+        "name": "node_name",
+        "oneof": false,
+        "repeated": false,
+        "tag": 16,
+        "type": "string"
+      },
+      {
+        "name": "backup_dir_bytes",
+        "oneof": false,
+        "repeated": false,
+        "tag": 17,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_last_load_path",
+        "oneof": false,
+        "repeated": false,
+        "tag": 18,
+        "type": "OptionalString"
+      },
+      {
+        "name": "snapshot_last_load_duration_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 19,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_last_load_entries",
+        "oneof": false,
+        "repeated": false,
+        "tag": 20,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_last_load_age_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 21,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "snapshot_restore_attempt_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 22,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_restore_success_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 23,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_restore_failure_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 24,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_restore_not_found_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 25,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_restore_policy_block_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 26,
+        "type": "uint64"
+      },
+      {
+        "name": "snapshot_restore_success_ratio_pct",
+        "oneof": false,
+        "repeated": false,
+        "tag": 27,
+        "type": "uint64"
+      },
+      {
+        "name": "persistence_platform_allowed",
+        "oneof": false,
+        "repeated": false,
+        "tag": 28,
+        "type": "bool"
+      },
+      {
+        "name": "persistence_runtime_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 29,
+        "type": "bool"
+      },
+      {
+        "name": "persistence_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 30,
+        "type": "bool"
+      },
+      {
+        "name": "persistence_backup_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 31,
+        "type": "bool"
+      },
+      {
+        "name": "persistence_export_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 32,
+        "type": "bool"
+      },
+      {
+        "name": "persistence_import_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 33,
+        "type": "bool"
+      },
+      {
+        "name": "tenancy_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 34,
+        "type": "bool"
+      },
+      {
+        "name": "tenancy_default_namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 35,
+        "type": "string"
+      },
+      {
+        "name": "tenancy_max_keys_per_namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 36,
+        "type": "uint64"
+      },
+      {
+        "name": "rate_limit_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 37,
+        "type": "bool"
+      },
+      {
+        "name": "rate_limited_requests_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 38,
+        "type": "uint64"
+      },
+      {
+        "name": "circuit_breaker_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 39,
+        "type": "bool"
+      },
+      {
+        "name": "hot_key_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 40,
+        "type": "bool"
+      },
+      {
+        "name": "hot_key_adaptive_waiters_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 41,
+        "type": "bool"
+      },
+      {
+        "name": "read_repair_enabled",
+        "oneof": false,
+        "repeated": false,
+        "tag": 42,
+        "type": "bool"
+      },
+      {
+        "name": "hot_key_coalesced_hits_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 43,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_fallback_exec_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 44,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_wait_timeout_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 45,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_stale_served_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 46,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_inflight_keys",
+        "oneof": false,
+        "repeated": false,
+        "tag": 47,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_stale_cache_entries",
+        "oneof": false,
+        "repeated": false,
+        "tag": 48,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_adaptive_state_keys",
+        "oneof": false,
+        "repeated": false,
+        "tag": 49,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_adaptive_limit_increase_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 50,
+        "type": "uint64"
+      },
+      {
+        "name": "hot_key_adaptive_limit_decrease_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 51,
+        "type": "uint64"
+      },
+      {
+        "name": "read_repair_trigger_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 52,
+        "type": "uint64"
+      },
+      {
+        "name": "read_repair_success_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 53,
+        "type": "uint64"
+      },
+      {
+        "name": "read_repair_throttled_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 54,
+        "type": "uint64"
+      },
+      {
+        "name": "read_repair_budget_exhausted_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 55,
+        "type": "uint64"
+      },
+      {
+        "name": "namespace_quota_reject_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 56,
+        "type": "uint64"
+      },
+      {
+        "name": "namespace_quota_reject_rate_per_min",
+        "oneof": false,
+        "repeated": false,
+        "tag": 57,
+        "type": "uint64"
+      },
+      {
+        "name": "namespace_quota_reject_trend",
+        "oneof": false,
+        "repeated": false,
+        "tag": 58,
+        "type": "string"
+      },
+      {
+        "name": "namespace_quota_top_usage",
+        "oneof": false,
+        "repeated": true,
+        "tag": 59,
+        "type": "NamespaceQuotaUsage"
+      },
+      {
+        "name": "namespace_latency_top",
+        "oneof": false,
+        "repeated": true,
+        "tag": 60,
+        "type": "NamespaceLatencySummary"
+      },
+      {
+        "name": "hot_key_top_usage",
+        "oneof": false,
+        "repeated": true,
+        "tag": 61,
+        "type": "HotKeyUsage"
+      },
+      {
+        "name": "anti_entropy_runs_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 62,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_repair_trigger_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 63,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_repair_throttled_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 64,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_last_detected_lag",
+        "oneof": false,
+        "repeated": false,
+        "tag": 65,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_key_checks_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 66,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_key_mismatch_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 67,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_full_reconcile_runs_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 68,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_full_reconcile_key_checks_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 69,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_full_reconcile_mismatch_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 70,
+        "type": "uint64"
+      },
+      {
+        "name": "anti_entropy_budget_exhausted_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 71,
+        "type": "uint64"
+      },
+      {
+        "name": "mixed_version_probe_runs_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 72,
+        "type": "uint64"
+      },
+      {
+        "name": "mixed_version_peers_detected_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 73,
+        "type": "uint64"
+      },
+      {
+        "name": "mixed_version_probe_errors_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 74,
+        "type": "uint64"
+      },
+      {
+        "name": "mixed_version_last_detected_peer_count",
+        "oneof": false,
+        "repeated": false,
+        "tag": 75,
+        "type": "uint64"
+      },
+      {
+        "name": "circuit_breaker_state",
+        "oneof": false,
+        "repeated": false,
+        "tag": 76,
+        "type": "string"
+      },
+      {
+        "name": "circuit_breaker_open_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 77,
+        "type": "uint64"
+      },
+      {
+        "name": "circuit_breaker_reject_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 78,
+        "type": "uint64"
+      },
+      {
+        "name": "client_requests_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 79,
+        "type": "uint64"
+      },
+      {
+        "name": "client_requests_tcp_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 80,
+        "type": "uint64"
+      },
+      {
+        "name": "client_requests_http_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 81,
+        "type": "uint64"
+      },
+      {
+        "name": "client_requests_internal_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 82,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_le_1ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 83,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_le_5ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 84,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_le_20ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 85,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_le_100ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 86,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_le_500ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 87,
+        "type": "uint64"
+      },
+      {
+        "name": "client_request_latency_gt_500ms_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 88,
+        "type": "uint64"
+      },
+      {
+        "name": "client_latency_p50_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 89,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "client_latency_p90_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 90,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "client_latency_p95_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 91,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "client_latency_p99_estimate_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 92,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "client_error_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 93,
+        "type": "uint64"
+      },
+      {
+        "name": "client_errors_tcp_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 94,
+        "type": "uint64"
+      },
+      {
+        "name": "client_errors_http_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 95,
+        "type": "uint64"
+      },
+      {
+        "name": "client_errors_internal_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 96,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_auth_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 97,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_throttle_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 98,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_availability_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 99,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_validation_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 100,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_internal_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 101,
+        "type": "uint64"
+      },
+      {
+        "name": "client_error_other_total",
+        "oneof": false,
+        "repeated": false,
+        "tag": 102,
+        "type": "uint64"
+      }
+    ],
+    "OptionalBytes": [
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "bytes"
+      }
+    ],
+    "OptionalString": [
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      }
+    ],
+    "OptionalUint64": [
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      }
+    ],
+    "PatternNamespace": [
+      {
+        "name": "pattern",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "OptionalString"
+      }
+    ],
+    "Prepare": [
+      {
+        "name": "log_index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      },
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "OptionalBytes"
+      },
+      {
+        "name": "ttl_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalUint64"
+      }
+    ],
+    "Properties": [
+      {
+        "name": "items",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "PropertyPair"
+      }
+    ],
+    "PropertyPair": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      }
+    ],
+    "PropertyUpdate": [
+      {
+        "name": "name",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "string"
+      }
+    ],
+    "RequestLog": [
+      {
+        "name": "from_index",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      }
+    ],
+    "RestoreResult": [
+      {
+        "name": "path",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "entries",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      },
+      {
+        "name": "duration_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      }
+    ],
+    "SetKeysTtl": [
+      {
+        "name": "pattern",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "ttl_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "OptionalUint64"
+      }
+    ],
+    "SetRequest": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "bytes"
+      },
+      {
+        "name": "ttl_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalString"
+      }
+    ],
+    "SetTtlByPatternRequest": [
+      {
+        "name": "pattern",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "ttl_secs",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "OptionalUint64"
+      },
+      {
+        "name": "namespace",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "OptionalString"
+      }
+    ],
+    "Snapshot": [
+      {
+        "name": "entries",
+        "oneof": false,
+        "repeated": true,
+        "tag": 1,
+        "type": "SnapshotEntry"
+      }
+    ],
+    "SnapshotEntry": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "bytes"
+      },
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      },
+      {
+        "name": "expires_at_ms",
+        "oneof": false,
+        "repeated": false,
+        "tag": 4,
+        "type": "OptionalUint64"
+      }
+    ],
+    "Synced": [
+      {
+        "name": "node_id",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "last_applied",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "uint64"
+      }
+    ],
+    "ValueResponse": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "bytes"
+      },
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      }
+    ],
+    "VersionResponse": [
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "uint64"
+      }
+    ],
+    "WatchEvent": [
+      {
+        "name": "key",
+        "oneof": false,
+        "repeated": false,
+        "tag": 1,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "oneof": false,
+        "repeated": false,
+        "tag": 2,
+        "type": "OptionalBytes"
+      },
+      {
+        "name": "version",
+        "oneof": false,
+        "repeated": false,
+        "tag": 3,
+        "type": "uint64"
+      }
     ]
-  }
+  },
+  "package": "ditto.protocol.v1",
+  "protocol_version": 1,
+  "source": "ditto-protocol/proto/ditto.proto"
 }

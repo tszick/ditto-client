@@ -10,8 +10,6 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +30,7 @@ class DittoTcpClientAutoReconnectSmokeTest {
                 try {
                     Socket conn1 = server.accept();
                     try (conn1) {
-                        assertEquals(3, readVariant(conn1));
+                        assertEquals(DittoTcpClient.Wire.REQ_PING, readRequestVariant(conn1));
                     }
 
                     server.setSoTimeout(500);
@@ -47,8 +45,8 @@ class DittoTcpClientAutoReconnectSmokeTest {
                     }
 
                     try (conn2) {
-                        assertEquals(3, readVariant(conn2));
-                        writeSimple(conn2, 4); // Pong
+                        assertEquals(DittoTcpClient.Wire.REQ_PING, readRequestVariant(conn2));
+                        writeFramedResponse(conn2, DittoTcpClient.Wire.RESP_PONG, new byte[0]);
                     }
                 } catch (Throwable e) {
                     serverError.set(e);
@@ -72,19 +70,16 @@ class DittoTcpClientAutoReconnectSmokeTest {
         }
     }
 
-    private static int readVariant(Socket conn) throws Exception {
+    private static int readRequestVariant(Socket conn) throws Exception {
         DataInputStream in = new DataInputStream(conn.getInputStream());
         int payloadLen = in.readInt();
         byte[] payload = in.readNBytes(payloadLen);
-        return ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        return ProtoTestSupport.readClientRequestVariant(payload);
     }
 
-    private static void writeSimple(Socket conn, int variant) throws Exception {
+    private static void writeFramedResponse(Socket conn, int variantField, byte[] inner) throws Exception {
         DataOutputStream out = new DataOutputStream(conn.getOutputStream());
-        ByteBuffer payload = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-        payload.putInt(variant);
-        out.writeInt(payload.array().length);
-        out.write(payload.array());
+        out.write(ProtoTestSupport.frameClientResponse(variantField, inner));
         out.flush();
     }
 }
