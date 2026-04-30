@@ -8,6 +8,7 @@ This guide documents the current state of Ditto client SDKs in this repository.
 - Java client: `ditto-java-client`
 - Python client: `ditto-python-client`
 - Go client: `ditto-go-client`
+- Rust client: `ditto-rust-client`
 
 Shared behavior target:
 - same core cache operations across SDKs,
@@ -28,17 +29,17 @@ Shared behavior target:
 
 ## Feature matrix (current)
 
-| Feature | Node.js | Java | Python | Go |
-|---|---|---|---|---|
-| TCP client | yes | yes | yes | yes |
-| HTTP client | yes | yes | yes | yes |
-| `ping/get/set/delete` | yes | yes | yes | yes |
-| `deleteByPattern` / `delete_by_pattern` | yes | yes | yes | yes |
-| `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes | yes |
-| Namespace-aware operations | yes | yes | yes | yes |
-| Strict mode (`key`/`namespace` validation) | yes | yes | yes | yes |
-| Key watch/unwatch (TCP) | yes | yes | yes | yes |
-| Auto reconnect (TCP) | yes | yes | yes | yes |
+| Feature | Node.js | Java | Python | Go | Rust |
+|---|---|---|---|---|---|
+| TCP client | yes | yes | yes | yes | yes |
+| HTTP client | yes | yes | yes | yes | yes |
+| `ping/get/set/delete` | yes | yes | yes | yes | yes |
+| `deleteByPattern` / `delete_by_pattern` | yes | yes | yes | yes | yes |
+| `setTtlByPattern` / `set_ttl_by_pattern` | yes | yes | yes | yes | yes |
+| Namespace-aware operations | yes | yes | yes | yes | yes |
+| Strict mode (`key`/`namespace` validation) | yes | yes | yes | yes | yes |
+| Key watch/unwatch (TCP) | yes | yes | yes | yes | yes |
+| Auto reconnect (TCP) | yes | yes | yes | yes | yes |
 
 ## API semantics
 
@@ -137,6 +138,16 @@ For long-lived idle watch connections:
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
 
+## Rust notes
+
+- Async Tokio-based API for HTTP and TCP clients.
+- Namespace-aware helpers are available for both protocols via optional namespace arguments.
+- Strict mode is available via `strict_mode: true` in client options.
+- HTTP TLS verification is secure-by-default when `tls: true`.
+- Dev-only insecure mode is explicit via `dev_insecure_tls: true`.
+- TCP watch APIs are available: `watch(key, namespace)`, `wait_watch_event()`, `unwatch(key, namespace)`.
+- TCP optional reconnect retry is available via `auto_reconnect: true` in `TcpClientOptions`.
+
 ## Watch flow examples
 
 ### Java
@@ -180,6 +191,22 @@ _ = tcp.Close()
 _ = ev
 ```
 
+### Rust
+
+```rust
+let tcp = ditto_rust_client::DittoTcpClient::new(ditto_rust_client::TcpClientOptions {
+    auto_reconnect: true,
+    ..ditto_rust_client::TcpClientOptions::default()
+});
+tcp.connect().await?;
+tcp.watch("k", None).await?;
+tcp.set_string("k", "value", None, None).await?;
+let ev = tcp.wait_watch_event().await?;
+tcp.unwatch("k", None).await?;
+tcp.close().await?;
+let _ = ev;
+```
+
 ## Local development
 
 ### Node.js client
@@ -203,6 +230,13 @@ cd ditto-client/ditto-java-client
 ```bash
 cd ditto-client/ditto-python-client
 python -m unittest discover -s tests -v
+```
+
+### Rust client
+
+```bash
+cd ditto-client/ditto-rust-client
+cargo test
 ```
 
 (Exact available test tasks depend on local setup; docker tests below are the canonical integration path used in this workspace.)
@@ -264,6 +298,7 @@ Pass condition:
 - PR no-regression checks currently enabled:
   - Node.js line coverage compared against base branch,
   - Go statement coverage compared against base branch,
+  - Rust coverage lane is not yet wired into the shared coverage workflow,
   - Python line coverage compared against base branch,
   - Java line coverage compared against base branch via JaCoCo XML.
 - Remaining gap:
@@ -275,11 +310,12 @@ Pass condition:
 ## Contract runtime parity
 
 - `contracts/core-ops.contract.json` defines the shared runtime cases.
-- All SDK lanes execute runtime adapter tests against this contract in CI:
+- SDK lanes execute runtime adapter tests against this contract:
   - Node: `tests/contract-runtime.test.mjs`
   - Go: `contract_runner_test.go`
   - Python: `tests/test_contract_runtime.py`
   - Java: `DittoContractRuntimeSmokeTest`
+  - Rust: `tests/contract_runtime.rs`
 - Schema-first protocol snapshot is tracked in `contracts/protocol-contract.snapshot.json`.
 - Protocol parity gate workflow: `.github/workflows/protocol-parity.yml`
   - checks snapshot drift against `ditto-cache/ditto-protocol/schema/protocol-contract.json`,
@@ -293,7 +329,7 @@ Pass condition:
 When introducing protocol-level changes:
 
 1. Update `ditto-protocol` enums and wire behavior.
-2. Update all four SDKs (Node/Java/Python/Go).
+2. Update all five SDKs (Node/Java/Python/Go/Rust).
 3. Update docker integration tests under `ditto-docker/clients/*`.
 4. Re-run all client docker suites.
 5. Update this guide.

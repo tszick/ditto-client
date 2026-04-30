@@ -5,3 +5,4 @@ ditto-java-client/build/
 ditto-java-client/.gradle/
 ditto-python-client/**/__pycache__/
 ditto-python-client/**/*.pyc
+ditto-rust-client/target/

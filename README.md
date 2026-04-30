@@ -2,12 +2,13 @@
 
 Client libraries for the [Ditto distributed cache](https://github.com/tszick/ditto-cache).
 
-This repository currently contains four client implementations:
+This repository currently contains five client implementations:
 
 - Go (`ditto-go-client`)
 - Java (`ditto-java-client`)
 - Node.js (`ditto-nodejs-client`)
 - Python (`ditto-python-client`)
+- Rust (`ditto-rust-client`)
 
 ---
 
@@ -15,7 +16,7 @@ This repository currently contains four client implementations:
 
 ### Go - `ditto-go-client`
 
-Requires Go 1.22+.
+Requires Go 1.26.0+.
 
 ```go
 httpClient := ditto.NewHTTPClient(ditto.HTTPClientOptions{Host: "localhost", Port: 7778})
@@ -54,7 +55,7 @@ Both clients are thread-safe. HTTP uses Java's built-in `HttpClient`; TCP uses a
 
 ### Node.js - `ditto-nodejs-client`
 
-Requires Node.js >= 22. TypeScript source, ships compiled JS + type declarations.
+Requires Node.js >= 25. TypeScript source, ships compiled JS + type declarations.
 
 ```ts
 import { DittoTcpClient } from "ditto-client";
@@ -67,6 +68,27 @@ await client.close();
 
 All methods are `async`. The TCP client queues concurrent requests internally.
 TCP also supports `watch/unwatch`, optional reconnect queue (`autoReconnect`) and reconnect backoff settings.
+
+---
+
+### Rust - `ditto-rust-client`
+
+Requires Rust 1.95+. Async Tokio-based client using `reqwest` for HTTP.
+
+```rust
+use ditto_rust_client::{DittoHttpClient, HttpClientOptions};
+
+#[tokio::main]
+async fn main() -> ditto_rust_client::Result<()> {
+    let client = DittoHttpClient::new(HttpClientOptions::default())?;
+    client.set_string("foo", "bar", Some(60), None).await?;
+    let result = client.get("foo", None).await?;
+    Ok(())
+}
+```
+
+Supports HTTP and TCP clients, namespace-aware operations, strict mode,
+pattern operations, TCP watch/unwatch, and optional TCP reconnect retry.
 
 ---
 
@@ -109,7 +131,7 @@ Some clients also expose pattern operations (`delete-by-pattern`, `set-ttl-by-pa
 Namespace support is available across all clients:
 
 - HTTP: `X-Ditto-Namespace` request header
-- TCP: optional `namespace` field encoded as bincode `Option<String>`
+- TCP: optional `namespace` sub-message encoded in the protobuf request envelope
 
 ---
 
@@ -138,18 +160,20 @@ Client impact:
 | HTTP REST | 7778 | Basic auth (username/password) |
 | TCP binary | 7777 | Auth token |
 
-Both protocols support TLS. The TCP protocol uses Bincode 1.x encoding with a 4-byte big-endian frame length prefix.
+HTTP supports TLS. The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix.
 
 TLS policy is secure-by-default across SDKs. Dev-only insecure bypass is explicit:
 - Node.js: `devInsecureTls: true`
 - Go: `DevInsecureTLS: true`
 - Java: `.devInsecureTls(true)`
 - Python: `dev_insecure_tls=True`
+- Rust: `dev_insecure_tls: true`
 
 ## Quick test commands
 
 ```bash
 cd ditto-client/ditto-go-client && go test ./...
+cd ditto-client/ditto-rust-client && cargo test
 cd ditto-client/ditto-python-client && python -m unittest discover -s tests -v
 cd ditto-client/ditto-java-client && ./gradlew test --console=plain
 cd ditto-client/ditto-nodejs-client && npm run test:integration
