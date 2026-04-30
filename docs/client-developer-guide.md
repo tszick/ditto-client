@@ -273,6 +273,14 @@ docker compose -f clients/python/docker-compose.yml up --build --abort-on-contai
 docker compose -f clients/python/docker-compose.yml down
 ```
 
+### Rust integration tests
+
+```bash
+cd ditto-docker
+docker compose -f clients/rust/docker-compose.yml up --build --abort-on-container-exit
+docker compose -f clients/rust/docker-compose.yml down
+```
+
 Pass condition:
 - test containers exit with code `0`.
 
@@ -295,16 +303,18 @@ Pass condition:
   - Go coverage (`coverage.out`, `coverage-go.txt`),
   - Python coverage (`.coverage`, `coverage.xml`, `coverage-python.txt`),
   - Java JaCoCo XML/HTML report.
+  - Rust coverage output (`coverage-rust.txt`, `coverage-rust.lcov`).
 - PR no-regression checks currently enabled:
   - Node.js line coverage compared against base branch,
   - Go statement coverage compared against base branch,
-  - Rust coverage lane is not yet wired into the shared coverage workflow,
   - Python line coverage compared against base branch,
   - Java line coverage compared against base branch via JaCoCo XML.
+  - Rust coverage artifact generation is wired in; no-regression enforcement is not yet enabled for Rust.
 - Remaining gap:
   - repository-wide absolute threshold enforcement is not yet documented as a stable blocking gate for all SDK lanes.
 - Current policy:
-  - the four SDK PR coverage gates are treated as required base-branch no-regression checks,
+  - the Node/Go/Python/Java PR coverage gates are treated as required base-branch no-regression checks,
+  - Rust publishes coverage artifacts while its no-regression gate is being proven stable,
   - this is the conservative enforcement model until a broader threshold policy is proven stable.
 
 ## Contract runtime parity
@@ -317,11 +327,11 @@ Pass condition:
   - Java: `DittoContractRuntimeSmokeTest`
   - Rust: `tests/contract_runtime.rs`
 - Schema-first protocol snapshot is tracked in `contracts/protocol-contract.snapshot.json`.
-- Protocol parity gate workflow: `.github/workflows/protocol-parity.yml`
+  - Protocol parity gate workflow: `.github/workflows/protocol-parity.yml`
   - checks snapshot drift against `ditto-cache/ditto-protocol/schema/protocol-contract.json`,
   - validates snapshot structure,
   - validates contract JSON specs,
-  - checks SDK known error-code sets against protocol `ErrorCode` enum.
+  - checks SDK known error-code sets against protocol `ErrorCode` enum, including Rust.
   - current snapshot includes `NamespaceQuotaExceeded` parity alignment across SDKs.
 
 ## Compatibility expectations
@@ -372,6 +382,13 @@ When introducing protocol-level changes:
     - added coverage-report workflow (`.github/workflows/coverage-report.yml`),
     - enabled Java JaCoCo report generation in Gradle (`test` + `jacocoTestReport`).
 
+- Completed (2026-04-30):
+  - Rust client bootstrap:
+    - added async Tokio + reqwest Rust client (`ditto-rust-client`),
+    - added HTTP contract runtime and TCP regression coverage,
+    - added Rust client matrix, release dry-run, coverage artifact, and protocol error-code parity checks,
+    - added Rust docker parity lane under `ditto-docker/clients/rust`.
+
 - Completed (2026-04-19):
   - protocol snapshot / parity hardening:
     - added protocol parity gate (`.github/workflows/protocol-parity.yml`),
@@ -380,5 +397,5 @@ When introducing protocol-level changes:
 
 - Status note:
   - client parity and release-prep workstreams above are closed based on committed workflows/tests/docs,
-  - coverage hardening is repo-side complete for the current conservative policy: required base-branch no-regression across Node/Go/Python/Java.
+  - coverage hardening is repo-side complete for the current conservative policy: required base-branch no-regression across Node/Go/Python/Java, with Rust coverage artifact reporting now wired.
   - release candidate expectations are anchored by `Snapshot + SDK Parity` plus the cross-repo checklist in `ditto-cache/docs/release-readiness-checklist.md`.

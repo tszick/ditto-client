@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "25"
       - name: Install deps
         run: npm ci
       - name: Build
@@ -47,7 +47,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26.0"
       - name: Run Go coverage
         run: |
           go test ./... -coverprofile=coverage.out
@@ -115,6 +115,35 @@ jobs:
             ditto-java-client/build/reports/jacoco/test/jacocoTestReport.xml
             ditto-java-client/build/reports/jacoco/test/html/**
 
+  rust:
+    name: Rust Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ditto-rust-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.95.0
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ditto-rust-client
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run Rust coverage
+        run: |
+          cargo llvm-cov --all-targets --summary-only | tee coverage-rust.txt
+          cargo llvm-cov --all-targets --lcov --output-path coverage-rust.lcov
+      - name: Upload Rust coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage-rust
+          path: |
+            ditto-rust-client/coverage-rust.txt
+            ditto-rust-client/coverage-rust.lcov
+
   nodejs-no-regression:
     name: Node.js Coverage No Regression (PR)
     if: github.event_name == 'pull_request'
@@ -131,7 +160,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "25"
       - name: Compute current branch Node coverage line%
         run: |
           set -euo pipefail
@@ -192,7 +221,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26.0"
       - name: Compute current branch Go coverage statements%
         run: |
           set -euo pipefail

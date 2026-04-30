@@ -22,7 +22,8 @@ What it does:
   - Node.js: `npm pack --dry-run`,
   - Python: `python -m build`,
   - Java: `./gradlew clean jar`,
-  - Go: `go test ./...`.
+  - Go: `go test ./...`,
+  - Rust: `cargo test`.
 
 ## Local dry-run (optional)
 

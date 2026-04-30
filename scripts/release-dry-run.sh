@@ -15,8 +15,9 @@ fi
 node_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ditto-nodejs-client/package.json | head -n 1)"
 python_version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ditto-python-client/pyproject.toml | head -n 1)"
 java_version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ditto-java-client/build.gradle.kts | head -n 1)"
+rust_version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ditto-rust-client/Cargo.toml | head -n 1)"
 
-if [[ -z "${node_version}" || -z "${python_version}" || -z "${java_version}" ]]; then
+if [[ -z "${node_version}" || -z "${python_version}" || -z "${java_version}" || -z "${rust_version}" ]]; then
   echo "failed to parse one or more SDK versions from source files" >&2
   exit 1
 fi
@@ -27,10 +28,11 @@ echo "  Node.js : ${node_version} (ditto-nodejs-client/package.json)"
 echo "  Python  : ${python_version} (ditto-python-client/pyproject.toml)"
 echo "  Java    : ${java_version} (ditto-java-client/build.gradle.kts)"
 echo "  Go      : module version follows git tag (go.mod has no package version field)"
+echo "  Rust    : ${rust_version} (ditto-rust-client/Cargo.toml)"
 echo
 
-if [[ "${node_version}" != "${python_version}" || "${node_version}" != "${java_version}" ]]; then
-  echo "warning: SDK source versions are currently not aligned across Node/Python/Java" >&2
+if [[ "${node_version}" != "${python_version}" || "${node_version}" != "${java_version}" || "${node_version}" != "${rust_version}" ]]; then
+  echo "warning: SDK source versions are currently not aligned across Node/Python/Java/Rust" >&2
 fi
 
 last_tag="$(git tag --list "client-v*" --sort=-creatordate | head -n 1 || true)"
@@ -63,4 +65,5 @@ echo "Planned manual bump targets for v${RELEASE_VERSION}:"
 echo "  - ditto-nodejs-client/package.json -> version = ${RELEASE_VERSION}"
 echo "  - ditto-python-client/pyproject.toml -> version = ${RELEASE_VERSION}"
 echo "  - ditto-java-client/build.gradle.kts -> version = ${RELEASE_VERSION}"
+echo "  - ditto-rust-client/Cargo.toml -> version = ${RELEASE_VERSION}"
 echo "  - create git tag: client-v${RELEASE_VERSION}"

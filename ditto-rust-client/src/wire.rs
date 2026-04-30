@@ -540,3 +540,94 @@ mod tests {
         assert_eq!(&frame[4..], &[8, 1, 18, 2, 34, 0]);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    pub(crate) fn frame_pong() -> Vec<u8> {
+        frame_client_response(RESP_PONG, &[])
+    }
+
+    pub(crate) fn frame_auth_ok() -> Vec<u8> {
+        frame_client_response(RESP_AUTH_OK, &[])
+    }
+
+    pub(crate) fn frame_not_found() -> Vec<u8> {
+        frame_client_response(RESP_NOT_FOUND, &[])
+    }
+
+    pub(crate) fn frame_deleted() -> Vec<u8> {
+        frame_client_response(RESP_DELETED, &[])
+    }
+
+    pub(crate) fn frame_watching() -> Vec<u8> {
+        frame_client_response(RESP_WATCHING, &[])
+    }
+
+    pub(crate) fn frame_unwatched() -> Vec<u8> {
+        frame_client_response(RESP_UNWATCHED, &[])
+    }
+
+    pub(crate) fn frame_value(key: &str, value: &[u8], version: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.string_field(VAL_KEY, key);
+        inner.bytes_field(VAL_VALUE, value);
+        inner.uint64_field(VAL_VERSION, version);
+        frame_client_response(RESP_VALUE, &inner.finish())
+    }
+
+    pub(crate) fn frame_ok(version: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.uint64_field(VR_VERSION, version);
+        frame_client_response(RESP_OK, &inner.finish())
+    }
+
+    pub(crate) fn frame_pattern_deleted(deleted: u64) -> Vec<u8> {
+        frame_count(RESP_PATTERN_DELETED, deleted)
+    }
+
+    pub(crate) fn frame_pattern_ttl_updated(updated: u64) -> Vec<u8> {
+        frame_count(RESP_PATTERN_TTL_UPDATED, updated)
+    }
+
+    pub(crate) fn frame_watch_event(key: &str, value: Option<&[u8]>, version: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.string_field(WE_KEY, key);
+        if let Some(value) = value {
+            let mut opt = Writer::default();
+            opt.bytes_field(OPT_VALUE, value);
+            inner.ld_field_always(WE_VALUE, &opt.finish());
+        }
+        inner.uint64_field(WE_VERSION, version);
+        frame_client_response(RESP_WATCH_EVENT, &inner.finish())
+    }
+
+    pub(crate) fn frame_error(code_idx: u64, message: &str) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.uint64_field(ERR_CODE, code_idx);
+        inner.string_field(ERR_MESSAGE, message);
+        frame_client_response(RESP_ERROR, &inner.finish())
+    }
+
+    fn frame_count(field: u32, count: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.uint64_field(COUNT_FIELD, count);
+        frame_client_response(field, &inner.finish())
+    }
+
+    fn frame_client_response(variant_field: u32, inner: &[u8]) -> Vec<u8> {
+        let mut response = Writer::default();
+        response.ld_field_always(variant_field, inner);
+
+        let mut envelope = Writer::default();
+        envelope.uint64_field(ENV_VERSION, PROTOCOL_VERSION);
+        envelope.ld_field_always(ENV_CLIENT_RESPONSE, &response.finish());
+        let envelope = envelope.finish();
+
+        let mut frame = Vec::with_capacity(4 + envelope.len());
+        frame.extend_from_slice(&(envelope.len() as u32).to_be_bytes());
+        frame.extend_from_slice(&envelope);
+        frame
+    }
+}

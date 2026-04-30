@@ -38,7 +38,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "25"
       - name: Install deps
         run: npm ci
       - name: Build
@@ -106,6 +106,25 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26.0"
       - name: Test
         run: go test ./...
+
+  rust:
+    name: Rust release sanity
+    runs-on: ubuntu-latest
+    needs: release-plan
+    defaults:
+      run:
+        working-directory: ditto-rust-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.95.0
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ditto-rust-client
+      - name: Test
+        run: cargo test

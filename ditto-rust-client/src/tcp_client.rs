@@ -89,7 +89,11 @@ impl DittoTcpClient {
 
     pub async fn ping(&self) -> Result<bool> {
         let response = self.send_request(wire::encode_ping()).await?;
-        Ok(matches!(response, ClientResponse::Pong))
+        match response {
+            ClientResponse::Pong => Ok(true),
+            ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
+            _ => Ok(false),
+        }
     }
 
     pub async fn get(&self, key: &str, namespace: Option<&str>) -> Result<Option<GetResult>> {
@@ -349,5 +353,196 @@ impl DittoTcpClient {
         .await
         .map_err(|_| DittoError::Protocol("tcp read timed out".into()))??;
         wire::decode_response(&payload)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wire::test_support;
+    use std::sync::Arc;
+    use tokio::net::TcpListener;
+    use tokio::sync::Mutex as TokioMutex;
+
+    #[tokio::test]
+    async fn tcp_core_operations_map_responses() {
+        let port = spawn_scripted_server(vec![vec![
+            test_support::frame_pong(),
+            test_support::frame_ok(7),
+            test_support::frame_value("k", b"value", 7),
+            test_support::frame_deleted(),
+            test_support::frame_pattern_deleted(2),
+            test_support::frame_pattern_ttl_updated(3),
+        ]])
+        .await;
+        let client = test_client(port, false, None);
+
+        assert!(client.ping().await.unwrap());
+        assert_eq!(
+            client
+                .set_string("k", "value", Some(60), None)
+                .await
+                .unwrap(),
+            SetResult { version: 7 }
+        );
+        assert_eq!(
+            client.get("k", None).await.unwrap(),
+            Some(GetResult {
+                value: b"value".to_vec(),
+                version: 7
+            })
+        );
+        assert!(client.delete("k", None).await.unwrap());
+        assert_eq!(
+            client.delete_by_pattern("k:*", None).await.unwrap(),
+            DeleteByPatternResult { deleted: 2 }
+        );
+        assert_eq!(
+            client
+                .set_ttl_by_pattern("k:*", Some(10), None)
+                .await
+                .unwrap(),
+            SetTtlByPatternResult { updated: 3 }
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_auth_and_watch_flow_map_responses() {
+        let port = spawn_watch_server().await;
+        let client = test_client(port, false, Some("secret"));
+
+        client.connect().await.unwrap();
+        client.watch("k", None).await.unwrap();
+        assert_eq!(
+            client.wait_watch_event().await.unwrap(),
+            WatchEventResult {
+                key: "k".to_string(),
+                value: Some(b"value".to_vec()),
+                version: 9,
+            }
+        );
+        client.unwatch("k", None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tcp_get_not_found_maps_to_none() {
+        let port = spawn_scripted_server(vec![vec![test_support::frame_not_found()]]).await;
+        let client = test_client(port, false, None);
+
+        assert_eq!(client.get("missing", None).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn tcp_server_error_maps_to_ditto_error() {
+        let port =
+            spawn_scripted_server(vec![vec![test_support::frame_error(7, "slow down")]]).await;
+        let client = test_client(port, false, None);
+
+        match client.ping().await.unwrap_err() {
+            DittoError::Server { code, message } => {
+                assert_eq!(code, "RateLimited");
+                assert_eq!(message, "slow down");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tcp_auto_reconnect_retries_once_after_io_error() {
+        let port = spawn_scripted_server(vec![vec![], vec![test_support::frame_pong()]]).await;
+        let client = test_client(port, true, None);
+
+        assert!(client.ping().await.unwrap());
+    }
+
+    fn test_client(port: u16, auto_reconnect: bool, auth_token: Option<&str>) -> DittoTcpClient {
+        DittoTcpClient::new(TcpClientOptions {
+            host: "127.0.0.1".to_string(),
+            port,
+            auth_token: auth_token.map(str::to_string),
+            request_timeout: Duration::from_secs(2),
+            connect_timeout: Duration::from_secs(2),
+            auto_reconnect,
+            ..TcpClientOptions::default()
+        })
+    }
+
+    async fn spawn_scripted_server(connections: Vec<Vec<Vec<u8>>>) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let scripts = Arc::new(TokioMutex::new(connections.into_iter()));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let Some(responses) = scripts.lock().await.next() else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    for response in responses {
+                        if read_request_frame(&mut stream).await.is_err() {
+                            return;
+                        }
+                        if stream.write_all(&response).await.is_err() {
+                            return;
+                        }
+                    }
+                    let _ = read_request_frame(&mut stream).await;
+                });
+            }
+        });
+        port
+    }
+
+    async fn spawn_watch_server() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            if read_request_frame(&mut stream).await.is_err() {
+                return;
+            }
+            if stream
+                .write_all(&test_support::frame_auth_ok())
+                .await
+                .is_err()
+            {
+                return;
+            }
+            if read_request_frame(&mut stream).await.is_err() {
+                return;
+            }
+            if stream
+                .write_all(&test_support::frame_watching())
+                .await
+                .is_err()
+            {
+                return;
+            }
+            if stream
+                .write_all(&test_support::frame_watch_event("k", Some(b"value"), 9))
+                .await
+                .is_err()
+            {
+                return;
+            }
+            if read_request_frame(&mut stream).await.is_err() {
+                return;
+            }
+            let _ = stream.write_all(&test_support::frame_unwatched()).await;
+        });
+        port
+    }
+
+    async fn read_request_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+        let mut header = [0u8; 4];
+        stream.read_exact(&mut header).await?;
+        let len = u32::from_be_bytes(header) as usize;
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await?;
+        Ok(payload)
     }
 }

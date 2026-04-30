@@ -203,6 +203,7 @@ Coverage status:
 - `.github/workflows/coverage-report.yml` publishes multi-language coverage artifacts.
 - Current CI gate state is conservative required no-regression:
   - enforced PR no-regression checks for Node.js, Go, Python, and Java coverage,
+  - Rust coverage artifacts are published,
   - not yet a fully enforced cross-SDK absolute-threshold gate.
 
 Release gate note:

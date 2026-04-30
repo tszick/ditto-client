@@ -13,6 +13,7 @@ NODE_TYPES = ROOT / "ditto-nodejs-client" / "src" / "types.ts"
 GO_ERRORS = ROOT / "ditto-go-client" / "errors.go"
 PY_TYPES = ROOT / "ditto-python-client" / "src" / "ditto_client" / "types.py"
 JAVA_ERRORS = ROOT / "ditto-java-client" / "src" / "main" / "java" / "io" / "ditto" / "client" / "DittoErrorCode.java"
+RUST_WIRE = ROOT / "ditto-rust-client" / "src" / "wire.rs"
 
 
 _PROTO_ERROR_CODE_PREFIX = "ERROR_CODE_"
@@ -55,6 +56,11 @@ def parse_java_constants(path: Path) -> set[str]:
     return {token.strip() for token in body.split(",") if token.strip()}
 
 
+def parse_rust_codes(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    return set(re.findall(r'=>\s*"([A-Za-z0-9_]+)"', text))
+
+
 def main() -> int:
     payload = json.loads(SNAPSHOT.read_text(encoding="utf-8-sig"))
     # Snapshot stores proto3 enum value names (ERROR_CODE_*); SDKs use the
@@ -65,6 +71,7 @@ def main() -> int:
     go = parse_go_codes(GO_ERRORS)
     py = parse_python_codes(PY_TYPES)
     java = parse_java_constants(JAVA_ERRORS)
+    rust = parse_rust_codes(RUST_WIRE)
 
     issues: list[str] = []
     for code in sorted(required):
@@ -76,6 +83,8 @@ def main() -> int:
             issues.append(f"python missing error code: {code}")
         if to_upper_snake(code) not in java:
             issues.append(f"java missing error code constant: {to_upper_snake(code)}")
+        if code not in rust:
+            issues.append(f"rust missing error code: {code}")
 
     if issues:
         print("sdk error-code parity check failed:")
