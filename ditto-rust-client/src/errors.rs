@@ -62,3 +62,41 @@ impl From<serde_json::Error> for DittoError {
         Self::Json(err)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+
+    #[test]
+    fn display_formats_all_error_variants() {
+        assert_eq!(
+            DittoError::server("RateLimited", "slow down").to_string(),
+            "RateLimited: slow down"
+        );
+        assert_eq!(
+            DittoError::Validation("bad key".to_string()).to_string(),
+            "validation error: bad key"
+        );
+        assert_eq!(
+            DittoError::Protocol("bad frame".to_string()).to_string(),
+            "protocol error: bad frame"
+        );
+        assert!(std::io::Error::from(std::io::ErrorKind::TimedOut)
+            .to_string()
+            .contains("timed out"));
+    }
+
+    #[test]
+    fn source_is_present_for_wrapped_errors_only() {
+        let io_error = DittoError::from(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        assert!(io_error.source().is_some());
+
+        let json_error = DittoError::from(serde_json::from_str::<serde_json::Value>("{").unwrap_err());
+        assert!(json_error.source().is_some());
+
+        assert!(DittoError::server("InternalError", "x").source().is_none());
+        assert!(DittoError::Validation("x".to_string()).source().is_none());
+        assert!(DittoError::Protocol("x".to_string()).source().is_none());
+    }
+}
