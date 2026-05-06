@@ -55,7 +55,7 @@ Both clients are thread-safe. HTTP uses Java's built-in `HttpClient`; TCP uses a
 
 ### Node.js - `ditto-nodejs-client`
 
-Requires Node.js >= 25. TypeScript source, ships compiled JS + type declarations.
+Requires Node.js >= 24. TypeScript source, ships compiled JS + type declarations.
 
 ```ts
 import { DittoTcpClient } from "ditto-client";
@@ -206,5 +206,4 @@ Coverage status:
   - Rust coverage artifacts are published,
   - not yet a fully enforced cross-SDK absolute-threshold gate.
 
-Release gate note:
-- production-ready candidates are expected to keep `Snapshot + SDK Parity` green and to align with the cross-repo checklist in `ditto-cache/docs/release-readiness-checklist.md`.
+Release and review notes are kept outside the public `docs/` tree.
