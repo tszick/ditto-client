@@ -37,7 +37,7 @@ docker run --rm -v "$(pwd):/repo" aquasec/trivy:latest \
 cd ditto-nodejs-client && npm audit --audit-level=high
 cd ../ditto-go-client && govulncheck ./...
 cd ../ditto-rust-client && cargo audit
-cd ../ditto-python-client && pip-audit
+cd ../ditto-python-client && pip-audit .
 ```
 
 DAST must only be run against an authorized local or dev Ditto endpoint:
