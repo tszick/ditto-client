@@ -102,7 +102,7 @@ test('http client exercises full endpoint surface and retry path', async () => {
     }
 
     res.writeHead(500);
-    res.end(`unexpected ${req.method} ${req.url}`);
+    res.end('unexpected request');
   });
 
   const client = new DittoHttpClient({
