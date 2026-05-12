@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "policy_name": "ditto-client-sdk-consistency-policy",
+  "generated_at": "2026-05-12T00:00:00Z",
+  "strict_validation": {
+    "current_default": false,
+    "production_recommended": true,
+    "breaking_release_target_default": true
+  },
+  "tcp_reconnect": {
+    "default_enabled": false,
+    "requires_explicit_opt_in": true
+  },
+  "insecure_tls": {
+    "dev_env_gate": "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV",
+    "nodejs": "rejected",
+    "java": "rejected",
+    "go": "env-gated-dev-only",
+    "python": "env-gated-dev-only",
+    "rust": "env-gated-dev-only"
+  },
+  "http_retry": {
+    "mutating_retries_default": false,
+    "notes": "SDKs may differ in retry availability, but default retries must not apply to PUT/POST."
+  }
+}

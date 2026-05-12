@@ -5,6 +5,9 @@ ditto-java-client/build/
 ditto-java-client/.gradle/
 ditto-python-client/**/__pycache__/
 ditto-python-client/**/*.pyc
+ditto-python-client/**/*.egg-info/
+scripts/__pycache__/
+scripts/*.pyc
 ditto-rust-client/target/
 
 # Local-only review/security notes and generated reports

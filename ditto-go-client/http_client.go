@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -77,7 +78,12 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 			insecureSkipVerify = false
 		}
 		if insecureSkipVerify {
-			log.Print("WARNING: insecure TLS certificate verification is enabled for local development only; do not use InsecureSkipVerify or DevInsecureTLS in production")
+			if !allowDevInsecureTLS() {
+				log.Print("WARNING: insecure TLS certificate verification was requested but ignored; set DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true for local/self-signed development only")
+				insecureSkipVerify = false
+			} else {
+				log.Print("WARNING: insecure TLS certificate verification is enabled for local development only; do not use InsecureSkipVerify or DevInsecureTLS in production")
+			}
 		}
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec
 	}
@@ -93,6 +99,11 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 		c.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(opts.Username+":"+opts.Password))
 	}
 	return c
+}
+
+func allowDevInsecureTLS() bool {
+	value := strings.TrimSpace(os.Getenv("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"))
+	return strings.EqualFold(value, "true") || value == "1"
 }
 
 func (c *HTTPClient) Close() {}

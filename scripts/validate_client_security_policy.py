@@ -11,9 +11,9 @@ from pathlib import Path
 REQUIRED_INSECURE_TLS_POLICY = {
     "nodejs": "rejected",
     "java": "rejected",
-    "go": "warn-dev-only",
-    "python": "warn-dev-only",
-    "rust": "warn-dev-only",
+    "go": "env-gated-dev-only",
+    "python": "env-gated-dev-only",
+    "rust": "env-gated-dev-only",
 }
 
 
@@ -60,15 +60,15 @@ def main() -> int:
     )
     require_contains(
         root / "ditto-go-client/http_client.go",
-        "WARNING: insecure TLS certificate verification is enabled for local development only",
+        "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV",
     )
     require_contains(
         root / "ditto-python-client/src/ditto_client/http_client_base.py",
-        "insecure TLS certificate verification is enabled for local development only",
+        "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV",
     )
     require_contains(
         root / "ditto-rust-client/src/http_client.rs",
-        "WARNING: insecure TLS certificate verification is enabled for local development only",
+        "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV",
     )
     require_contains(
         root / "README.md",

@@ -165,7 +165,7 @@ Production clients should use HTTPS with certificate verification enabled and st
 HTTP supports TLS. TLS policy is secure-by-default across SDKs:
 
 - Node.js and Java reject insecure TLS bypass options.
-- Go, Python, and Rust still expose dev-only insecure TLS bypasses for local/self-signed testing. These emit warnings and must not be used in production.
+- Go, Python, and Rust still expose dev-only insecure TLS bypasses for local/self-signed testing, but they now require `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true`. These must not be used in production.
 
 The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Raw TCP does not encrypt tokens or cache payloads. Use raw TCP only on loopback, private trusted networks, or an encrypted underlay such as a service mesh, VPN, or tunnel.
 

@@ -52,6 +52,11 @@ impl DittoHttpClient {
     pub fn new(options: HttpClientOptions) -> Result<Self> {
         let scheme = if options.tls { "https" } else { "http" };
         if options.tls && options.dev_insecure_tls {
+            if !allow_dev_insecure_tls() {
+                return Err(DittoError::Validation(
+                    "insecure TLS verification requires DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true for local/self-signed development".to_string(),
+                ));
+            }
             eprintln!(
                 "WARNING: insecure TLS certificate verification is enabled for local development only; do not use dev_insecure_tls in production"
             );
@@ -257,6 +262,15 @@ impl DittoHttpClient {
     }
 }
 
+fn allow_dev_insecure_tls() -> bool {
+    std::env::var("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV")
+        .map(|value| {
+            let value = value.trim();
+            value.eq_ignore_ascii_case("true") || value == "1"
+        })
+        .unwrap_or(false)
+}
+
 fn http_status_to_code(status: StatusCode) -> &'static str {
     match status.as_u16() {
         503 => "NodeInactive",
@@ -293,4 +307,26 @@ struct GetResponse {
 struct ErrorResponse {
     error: Option<String>,
     message: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dev_insecure_tls_requires_explicit_env() {
+        unsafe {
+            std::env::remove_var("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV");
+        }
+        let err = DittoHttpClient::new(HttpClientOptions {
+            tls: true,
+            dev_insecure_tls: true,
+            ..HttpClientOptions::default()
+        })
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV")
+        );
+    }
 }

@@ -118,40 +118,88 @@ mod tests {
             normalized_namespace(false, Some(" tenant-a ")).unwrap(),
             Some("tenant-a".to_string())
         );
-        assert!(normalized_namespace(true, Some("   "))
-            .unwrap_err()
-            .to_string()
-            .contains("namespace must not be blank"));
+        assert!(
+            normalized_namespace(true, Some("   "))
+                .unwrap_err()
+                .to_string()
+                .contains("namespace must not be blank")
+        );
     }
 
     #[test]
     fn strict_core_validation_covers_key_and_namespace_failures() {
         assert!(validate_core_inputs(false, "get", "bad key", Some("bad::ns")).is_ok());
         assert!(validate_core_inputs(true, "get", "key-1._:ok", Some("tenant-a")).is_ok());
-        assert!(err_text(validate_core_inputs(true, "get", " ", None)).contains("key must not be empty"));
-        assert!(err_text(validate_core_inputs(true, "set", "bad key", None))
-            .contains("key contains unsupported characters"));
-        assert!(err_text(validate_core_inputs(true, "delete", "key", Some(" ")))
-            .contains("namespace must not be blank"));
-        assert!(err_text(validate_core_inputs(true, "delete", "key", Some("bad::ns")))
-            .contains("namespace must not contain '::'"));
-        assert!(err_text(validate_core_inputs(true, "delete", "key", Some("bad ns")))
-            .contains("namespace contains unsupported characters"));
+        assert!(
+            err_text(validate_core_inputs(true, "get", " ", None))
+                .contains("key must not be empty")
+        );
+        assert!(
+            err_text(validate_core_inputs(true, "set", "bad key", None))
+                .contains("key contains unsupported characters")
+        );
+        assert!(
+            err_text(validate_core_inputs(true, "delete", "key", Some(" ")))
+                .contains("namespace must not be blank")
+        );
+        assert!(
+            err_text(validate_core_inputs(true, "delete", "key", Some("bad::ns")))
+                .contains("namespace must not contain '::'")
+        );
+        assert!(
+            err_text(validate_core_inputs(true, "delete", "key", Some("bad ns")))
+                .contains("namespace contains unsupported characters")
+        );
     }
 
     #[test]
     fn strict_pattern_validation_covers_pattern_and_namespace_failures() {
-        assert!(validate_pattern_inputs(false, "deleteByPattern", "bad pattern*", Some("bad::ns")).is_ok());
-        assert!(validate_pattern_inputs(true, "deleteByPattern", "tenant:*", Some("tenant-a")).is_ok());
-        assert!(err_text(validate_pattern_inputs(true, "deleteByPattern", " ", None))
-            .contains("pattern must not be empty"));
-        assert!(err_text(validate_pattern_inputs(true, "deleteByPattern", "bad pattern*", None))
-            .contains("pattern contains unsupported characters"));
-        assert!(err_text(validate_pattern_inputs(true, "setTtlByPattern", "tenant:*", Some(" ")))
-            .contains("namespace must not be blank"));
-        assert!(err_text(validate_pattern_inputs(true, "setTtlByPattern", "tenant:*", Some("bad::ns")))
-            .contains("namespace must not contain '::'"));
-        assert!(err_text(validate_pattern_inputs(true, "setTtlByPattern", "tenant:*", Some("bad ns")))
-            .contains("namespace contains unsupported characters"));
+        assert!(
+            validate_pattern_inputs(false, "deleteByPattern", "bad pattern*", Some("bad::ns"))
+                .is_ok()
+        );
+        assert!(
+            validate_pattern_inputs(true, "deleteByPattern", "tenant:*", Some("tenant-a")).is_ok()
+        );
+        assert!(
+            err_text(validate_pattern_inputs(true, "deleteByPattern", " ", None))
+                .contains("pattern must not be empty")
+        );
+        assert!(
+            err_text(validate_pattern_inputs(
+                true,
+                "deleteByPattern",
+                "bad pattern*",
+                None
+            ))
+            .contains("pattern contains unsupported characters")
+        );
+        assert!(
+            err_text(validate_pattern_inputs(
+                true,
+                "setTtlByPattern",
+                "tenant:*",
+                Some(" ")
+            ))
+            .contains("namespace must not be blank")
+        );
+        assert!(
+            err_text(validate_pattern_inputs(
+                true,
+                "setTtlByPattern",
+                "tenant:*",
+                Some("bad::ns")
+            ))
+            .contains("namespace must not contain '::'")
+        );
+        assert!(
+            err_text(validate_pattern_inputs(
+                true,
+                "setTtlByPattern",
+                "tenant:*",
+                Some("bad ns")
+            ))
+            .contains("namespace contains unsupported characters")
+        );
     }
 }

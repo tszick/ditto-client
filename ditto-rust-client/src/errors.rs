@@ -82,9 +82,11 @@ mod tests {
             DittoError::Protocol("bad frame".to_string()).to_string(),
             "protocol error: bad frame"
         );
-        assert!(std::io::Error::from(std::io::ErrorKind::TimedOut)
-            .to_string()
-            .contains("timed out"));
+        assert!(
+            std::io::Error::from(std::io::ErrorKind::TimedOut)
+                .to_string()
+                .contains("timed out")
+        );
     }
 
     #[test]
@@ -92,7 +94,8 @@ mod tests {
         let io_error = DittoError::from(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
         assert!(io_error.source().is_some());
 
-        let json_error = DittoError::from(serde_json::from_str::<serde_json::Value>("{").unwrap_err());
+        let json_error =
+            DittoError::from(serde_json::from_str::<serde_json::Value>("{").unwrap_err());
         assert!(json_error.source().is_some());
 
         assert!(DittoError::server("InternalError", "x").source().is_none());

@@ -21,6 +21,10 @@ jobs:
         run: python scripts/validate_release_manifest.py
       - name: Validate client security policy
         run: python scripts/validate_client_security_policy.py
+      - name: Validate SDK consistency policy
+        run: python scripts/validate_sdk_consistency.py
+      - name: Validate repo hygiene
+        run: python scripts/validate_repo_hygiene.py
       - name: Validate contract specs
         run: python contracts/validate_contracts.py
 

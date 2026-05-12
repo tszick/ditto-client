@@ -14,9 +14,9 @@
     "insecure_tls": {
       "nodejs": "rejected",
       "java": "rejected",
-      "go": "warn-dev-only",
-      "python": "warn-dev-only",
-      "rust": "warn-dev-only"
+      "go": "env-gated-dev-only",
+      "python": "env-gated-dev-only",
+      "rust": "env-gated-dev-only"
     }
   },
   "sdks": {
