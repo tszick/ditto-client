@@ -108,7 +108,7 @@ For long-lived idle watch connections:
 
 - `tls: true` for HTTPS.
 - secure default: certificate validation stays enabled.
-- dev-only insecure bypass is explicit via `devInsecureTls: true` (or legacy `rejectUnauthorized: false`).
+- insecure TLS bypass options are rejected; use a trusted certificate instead.
 
 ## Java notes
 
@@ -116,7 +116,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both clients.
 - TCP watch APIs are available: `watch(key)`, `waitForWatchEvent()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `new DittoTcpClient(host, port, authToken, strictMode, autoReconnect)`.
-- HTTP TLS secure default is enabled when `tls(true)`; dev-only insecure mode is explicit via `.devInsecureTls(true)`.
+- HTTP TLS secure default is enabled when `tls(true)`; insecure TLS bypass options are rejected.
 - Exceptions are surfaced as `IOException`, `InterruptedException`, or Ditto-specific exception types depending on layer.
 
 ## Python notes
@@ -126,7 +126,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both HTTP and TCP clients.
 - TCP watch APIs are available: `watch(key)`, `wait_watch_event()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `auto_reconnect=True`.
-- HTTP TLS secure default is enabled when `tls=True`; dev-only insecure mode is explicit via `dev_insecure_tls=True`.
+- HTTP TLS secure default is enabled when `tls=True`; `dev_insecure_tls=True` is local-development only and emits a warning.
 
 ## Go notes
 
@@ -134,7 +134,7 @@ For long-lived idle watch connections:
 - Namespace-aware helpers are available for both protocols.
 - Strict mode is available via `StrictMode: true` in client options.
 - HTTP TLS verification is secure-by-default when `TLS: true`.
-- Dev-only insecure mode is explicit via `DevInsecureTLS: true` (legacy `InsecureSkipVerify: true` remains supported).
+- Dev-only insecure mode is explicit via `DevInsecureTLS: true` (legacy `InsecureSkipVerify: true` remains supported) and emits a warning.
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
 
@@ -144,7 +144,14 @@ For long-lived idle watch connections:
 - Namespace-aware helpers are available for both protocols via optional namespace arguments.
 - Strict mode is available via `strict_mode: true` in client options.
 - HTTP TLS verification is secure-by-default when `tls: true`.
-- Dev-only insecure mode is explicit via `dev_insecure_tls: true`.
+- Dev-only insecure mode is explicit via `dev_insecure_tls: true` and emits a warning.
+
+## Production transport policy
+
+- Production clients should use HTTPS with certificate verification enabled.
+- Raw TCP authenticates with a token but does not encrypt tokens or cache payloads.
+- Use raw TCP only on loopback, private trusted networks, or an encrypted underlay such as a service mesh, VPN, or tunnel.
+- Production examples should enable strict client-side validation where consumer key formats allow it.
 - TCP watch APIs are available: `watch(key, namespace)`, `wait_watch_event()`, `unwatch(key, namespace)`.
 - TCP optional reconnect retry is available via `auto_reconnect: true` in `TcpClientOptions`.
 

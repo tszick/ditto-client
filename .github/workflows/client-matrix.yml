@@ -17,6 +17,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Validate release manifest
+        run: python scripts/validate_release_manifest.py
+      - name: Validate client security policy
+        run: python scripts/validate_client_security_policy.py
       - name: Validate contract specs
         run: python contracts/validate_contracts.py
 

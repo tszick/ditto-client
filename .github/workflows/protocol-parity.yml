@@ -25,6 +25,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Validate release manifest
+        run: python scripts/validate_release_manifest.py
+
+      - name: Validate client security policy
+        run: python scripts/validate_client_security_policy.py
+
       - name: Check snapshot matches ditto-cache protocol contract
         run: python scripts/sync_protocol_snapshot.py --check --source ditto-cache-source/ditto-protocol/schema/protocol-contract.json
 

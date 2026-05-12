@@ -17,13 +17,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Generate release dry-run plan
         run: bash scripts/release-dry-run.sh "${{ inputs.release_version }}"
+      - name: Validate client security policy
+        run: python scripts/validate_client_security_policy.py
       - name: Upload changelog preview
         uses: actions/upload-artifact@v4
         with:
           name: release-dry-run-changelog
-          path: release-dry-run-changelog.md
+          path: |
+            release-dry-run-changelog.md
+            release-manifest.json
 
   nodejs:
     name: Node.js package dry run
@@ -39,12 +47,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "25"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Install deps
         run: npm ci
       - name: Build
         run: npm run build
-      - name: NPM pack dry run
-        run: npm pack --dry-run
+      - name: NPM pack
+        run: npm pack
+      - name: Generate release evidence
+        working-directory: .
+        run: python scripts/generate_release_evidence.py --sdk nodejs --artifact "ditto-nodejs-client/*.tgz"
+      - name: Upload Node.js package and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodejs-package-evidence
+          path: |
+            ditto-nodejs-client/*.tgz
+            release-evidence/nodejs/*
 
   python:
     name: Python package dry run
@@ -64,11 +86,16 @@ jobs:
         run: python -m pip install --upgrade pip build
       - name: Build sdist/wheel
         run: python -m build
-      - name: Upload Python dist
+      - name: Generate release evidence
+        working-directory: .
+        run: python scripts/generate_release_evidence.py --sdk python --artifact "ditto-python-client/dist/*"
+      - name: Upload Python dist and evidence
         uses: actions/upload-artifact@v4
         with:
-          name: python-dist
-          path: ditto-python-client/dist/*
+          name: python-dist-evidence
+          path: |
+            ditto-python-client/dist/*
+            release-evidence/python/*
 
   java:
     name: Java jar dry run
@@ -85,13 +112,22 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Build jar
         run: ./gradlew --no-daemon clean jar
-      - name: Upload Java jar
+      - name: Generate release evidence
+        working-directory: .
+        run: python scripts/generate_release_evidence.py --sdk java --artifact "ditto-java-client/build/libs/*.jar"
+      - name: Upload Java jar and evidence
         uses: actions/upload-artifact@v4
         with:
-          name: java-jar
-          path: ditto-java-client/build/libs/*.jar
+          name: java-jar-evidence
+          path: |
+            ditto-java-client/build/libs/*.jar
+            release-evidence/java/*
 
   go:
     name: Go release sanity
@@ -107,8 +143,20 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26.2"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Test
         run: go test ./...
+      - name: Generate release evidence
+        working-directory: .
+        run: python scripts/generate_release_evidence.py --sdk go
+      - name: Upload Go module evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-module-evidence
+          path: release-evidence/go/*
 
   rust:
     name: Rust release sanity
@@ -122,9 +170,25 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.95.0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ditto-rust-client
       - name: Test
         run: cargo test
+      - name: Cargo package
+        run: cargo package --allow-dirty
+      - name: Generate release evidence
+        working-directory: .
+        run: python scripts/generate_release_evidence.py --sdk rust --artifact "ditto-rust-client/target/package/*.crate"
+      - name: Upload Rust crate and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-crate-evidence
+          path: |
+            ditto-rust-client/target/package/*.crate
+            release-evidence/rust/*

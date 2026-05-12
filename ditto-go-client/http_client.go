@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -74,6 +75,9 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 			insecureSkipVerify = true
 		} else if opts.RejectUnauthorized {
 			insecureSkipVerify = false
+		}
+		if insecureSkipVerify {
+			log.Print("WARNING: insecure TLS certificate verification is enabled for local development only; do not use InsecureSkipVerify or DevInsecureTLS in production")
 		}
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec
 	}

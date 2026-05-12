@@ -160,14 +160,14 @@ Client impact:
 | HTTP REST | 7778 | Basic auth (username/password) |
 | TCP binary | 7777 | Auth token |
 
-HTTP supports TLS. The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix.
+Production clients should use HTTPS with certificate verification enabled and strict client-side validation where possible.
 
-TLS policy is secure-by-default across SDKs. Dev-only insecure bypass is explicit:
-- Node.js: `devInsecureTls: true`
-- Go: `DevInsecureTLS: true`
-- Java: `.devInsecureTls(true)`
-- Python: `dev_insecure_tls=True`
-- Rust: `dev_insecure_tls: true`
+HTTP supports TLS. TLS policy is secure-by-default across SDKs:
+
+- Node.js and Java reject insecure TLS bypass options.
+- Go, Python, and Rust still expose dev-only insecure TLS bypasses for local/self-signed testing. These emit warnings and must not be used in production.
+
+The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Raw TCP does not encrypt tokens or cache payloads. Use raw TCP only on loopback, private trusted networks, or an encrypted underlay such as a service mesh, VPN, or tunnel.
 
 ## Quick test commands
 
@@ -204,6 +204,7 @@ Coverage status:
 - Current CI gate state is conservative required no-regression:
   - enforced PR no-regression checks for Node.js, Go, Python, and Java coverage,
   - Rust coverage artifacts are published,
-  - not yet a fully enforced cross-SDK absolute-threshold gate.
+  - absolute release-candidate thresholds are enforced by `Client Coverage Threshold Summary`.
+- Threshold policy lives in `release/coverage-threshold-policy.json`; exceptions must be explicit, approved, and time-limited.
 
 Release and review notes are kept outside the public `docs/` tree.

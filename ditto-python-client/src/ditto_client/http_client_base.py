@@ -15,6 +15,7 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from typing import Any
 
 from .types import DittoError, DittoErrorCode
@@ -50,6 +51,12 @@ class DittoHttpClientBase:
         if tls:
             ctx = ssl.create_default_context()
             if dev_insecure_tls or not reject_unauthorized:
+                warnings.warn(
+                    "insecure TLS certificate verification is enabled for local development only; "
+                    "do not use dev_insecure_tls=True or reject_unauthorized=False in production",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
             self._ssl_ctx = ctx

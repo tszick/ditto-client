@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "policy_name": "ditto-client-release-coverage-thresholds",
+  "generated_at": "2026-05-11T00:00:00Z",
+  "scope": "release-candidate",
+  "lanes": [
+    {
+      "name": "nodejs-line",
+      "description": "Node.js line coverage from node --test --experimental-test-coverage",
+      "minimum_percent": 40.0,
+      "raise_after": "2026-08-01"
+    },
+    {
+      "name": "go-statements",
+      "description": "Go total statement coverage from go tool cover -func",
+      "minimum_percent": 40.0,
+      "raise_after": "2026-08-01"
+    },
+    {
+      "name": "python-line",
+      "description": "Python total line coverage from coverage report",
+      "minimum_percent": 40.0,
+      "raise_after": "2026-08-01"
+    },
+    {
+      "name": "java-line",
+      "description": "Java line coverage from JaCoCo XML",
+      "minimum_percent": 75.0,
+      "raise_after": "2026-08-01"
+    },
+    {
+      "name": "rust-line",
+      "description": "Rust line coverage from cargo llvm-cov --all-targets --summary-only",
+      "minimum_percent": 40.0,
+      "raise_after": "2026-08-01"
+    }
+  ],
+  "exceptions": []
+}

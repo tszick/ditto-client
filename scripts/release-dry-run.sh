@@ -12,6 +12,9 @@ if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
   exit 2
 fi
 
+python scripts/validate_release_manifest.py --expected-version "${RELEASE_VERSION}"
+python scripts/validate_client_security_policy.py
+
 node_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ditto-nodejs-client/package.json | head -n 1)"
 python_version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ditto-python-client/pyproject.toml | head -n 1)"
 java_version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ditto-java-client/build.gradle.kts | head -n 1)"
@@ -30,10 +33,6 @@ echo "  Java    : ${java_version} (ditto-java-client/build.gradle.kts)"
 echo "  Go      : module version follows git tag (go.mod has no package version field)"
 echo "  Rust    : ${rust_version} (ditto-rust-client/Cargo.toml)"
 echo
-
-if [[ "${node_version}" != "${python_version}" || "${node_version}" != "${java_version}" || "${node_version}" != "${rust_version}" ]]; then
-  echo "warning: SDK source versions are currently not aligned across Node/Python/Java/Rust" >&2
-fi
 
 last_tag="$(git tag --list "client-v*" --sort=-creatordate | head -n 1 || true)"
 range_spec=""
@@ -66,4 +65,5 @@ echo "  - ditto-nodejs-client/package.json -> version = ${RELEASE_VERSION}"
 echo "  - ditto-python-client/pyproject.toml -> version = ${RELEASE_VERSION}"
 echo "  - ditto-java-client/build.gradle.kts -> version = ${RELEASE_VERSION}"
 echo "  - ditto-rust-client/Cargo.toml -> version = ${RELEASE_VERSION}"
+echo "  - release-manifest.json -> release_version/tag/protocol snapshot hash"
 echo "  - create git tag: client-v${RELEASE_VERSION}"

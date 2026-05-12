@@ -29,6 +29,11 @@ jobs:
         run: |
           set -o pipefail
           node --test --experimental-test-coverage tests/*.test.mjs | tee coverage-node.txt
+      - name: Enforce Node.js coverage threshold
+        run: |
+          set -euo pipefail
+          line_pct=$(grep -E "all files" coverage-node.txt | sed -E 's/.*all files *\| *([0-9.]+).*/\1/' | tail -n1)
+          python ../scripts/validate_coverage_thresholds.py --policy ../release/coverage-threshold-policy.json --metric "nodejs-line:${line_pct}"
       - name: Upload Node coverage artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,6 +57,11 @@ jobs:
         run: |
           go test ./... -coverprofile=coverage.out
           go tool cover -func=coverage.out | tee coverage-go.txt
+      - name: Enforce Go coverage threshold
+        run: |
+          set -euo pipefail
+          stmt_pct=$(awk '/^total:/ {gsub("%","",$3); print $3}' coverage-go.txt | tail -n1)
+          python ../scripts/validate_coverage_thresholds.py --policy ../release/coverage-threshold-policy.json --metric "go-statements:${stmt_pct}"
       - name: Upload Go coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +92,11 @@ jobs:
           coverage run -m unittest discover -s tests -v
           coverage xml -o coverage.xml
           coverage report | tee coverage-python.txt
+      - name: Enforce Python coverage threshold
+        run: |
+          set -euo pipefail
+          line_pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' coverage-python.txt | tail -n1)
+          python ../scripts/validate_coverage_thresholds.py --policy ../release/coverage-threshold-policy.json --metric "python-line:${line_pct}"
       - name: Upload Python coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -107,6 +122,24 @@ jobs:
           java-version: "21"
       - name: Run Java tests + JaCoCo report
         run: ./gradlew --no-daemon test jacocoTestReport
+      - name: Enforce Java coverage threshold
+        run: |
+          set -euo pipefail
+          line_pct=$(python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("build/reports/jacoco/test/jacocoTestReport.xml").getroot()
+          for counter in root.findall("counter"):
+              if counter.get("type") == "LINE":
+                  covered = int(counter.get("covered", "0"))
+                  missed = int(counter.get("missed", "0"))
+                  total = covered + missed
+                  print(f"{(covered * 100.0 / total):.2f}" if total else "0.00")
+                  break
+          else:
+              raise SystemExit("missing LINE counter in JaCoCo XML")
+          PY
+          )
+          python ../scripts/validate_coverage_thresholds.py --policy ../release/coverage-threshold-policy.json --metric "java-line:${line_pct}"
       - name: Upload Java coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -136,6 +169,11 @@ jobs:
         run: |
           cargo llvm-cov --all-targets --summary-only | tee coverage-rust.txt
           cargo llvm-cov --all-targets --lcov --output-path coverage-rust.lcov
+      - name: Enforce Rust coverage threshold
+        run: |
+          set -euo pipefail
+          line_pct=$(grep -E '^TOTAL' coverage-rust.txt | awk '{gsub("%","",$NF); print $NF}' | tail -n1)
+          python ../scripts/validate_coverage_thresholds.py --policy ../release/coverage-threshold-policy.json --metric "rust-line:${line_pct}"
       - name: Upload Rust coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -408,3 +446,31 @@ PY
             echo "Java coverage regressed (current=${current_line_pct}, base=${base_line_pct})" >&2
             exit 1
           }
+
+  coverage-threshold-summary:
+    name: Client Coverage Threshold Summary
+    needs: [nodejs, go, python, java, rust]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify coverage threshold lanes passed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.nodejs.result }}" = "success"
+          test "${{ needs.go.result }}" = "success"
+          test "${{ needs.python.result }}" = "success"
+          test "${{ needs.java.result }}" = "success"
+          test "${{ needs.rust.result }}" = "success"
+      - name: Summarize coverage thresholds
+        shell: bash
+        run: |
+          {
+            echo "## Client Coverage Threshold Summary"
+            echo ""
+            echo "- nodejs: ${{ needs.nodejs.result }}"
+            echo "- go: ${{ needs.go.result }}"
+            echo "- python: ${{ needs.python.result }}"
+            echo "- java: ${{ needs.java.result }}"
+            echo "- rust: ${{ needs.rust.result }}"
+          } >> "$GITHUB_STEP_SUMMARY"

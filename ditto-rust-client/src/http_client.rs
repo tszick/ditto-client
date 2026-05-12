@@ -51,6 +51,11 @@ pub struct DittoHttpClient {
 impl DittoHttpClient {
     pub fn new(options: HttpClientOptions) -> Result<Self> {
         let scheme = if options.tls { "https" } else { "http" };
+        if options.tls && options.dev_insecure_tls {
+            eprintln!(
+                "WARNING: insecure TLS certificate verification is enabled for local development only; do not use dev_insecure_tls in production"
+            );
+        }
         let client = Client::builder()
             .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)

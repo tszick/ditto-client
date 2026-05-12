@@ -34,6 +34,10 @@ class HttpClientBaseTests(unittest.TestCase):
         with client as same:
             self.assertIs(same, client)
 
+    def test_insecure_tls_option_warns(self):
+        with self.assertWarnsRegex(RuntimeWarning, "local development only"):
+            DittoHttpClientBase(tls=True, dev_insecure_tls=True)
+
 
 if __name__ == "__main__":
     unittest.main()
