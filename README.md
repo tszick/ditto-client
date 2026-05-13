@@ -208,3 +208,6 @@ Coverage status:
 - Threshold policy lives in `release/coverage-threshold-policy.json`; exceptions must be explicit, approved, and time-limited.
 
 Release and review notes are kept outside the public `docs/` tree.
+
+SDK deployment and release runbook steps live in
+`docs/client-developer-guide.md#sdk-deployment-and-release-checklist`.

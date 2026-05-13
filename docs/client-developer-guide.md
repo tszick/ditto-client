@@ -155,6 +155,111 @@ For long-lived idle watch connections:
 - TCP watch APIs are available: `watch(key, namespace)`, `wait_watch_event()`, `unwatch(key, namespace)`.
 - TCP optional reconnect retry is available via `auto_reconnect: true` in `TcpClientOptions`.
 
+## SDK deployment and release checklist
+
+Use this checklist before publishing SDK packages or promoting a client bundle
+to an application team.
+
+### Preflight gates
+
+Run from `ditto-client`:
+
+```bash
+python scripts/validate_repo_hygiene.py
+python scripts/validate_release_manifest.py
+python scripts/validate_sdk_consistency.py
+python scripts/validate_client_security_policy.py
+python contracts/validate_contracts.py
+```
+
+Run the maintained SDK lanes:
+
+```bash
+cd ditto-go-client && go test ./... && go vet ./...
+cd ../ditto-python-client && python -m unittest discover -s tests -v && python -m compileall src
+cd ../ditto-rust-client && cargo test && cargo clippy -- -D warnings
+cd ../ditto-java-client && ./gradlew test
+cd ../ditto-nodejs-client && npm run build && npm run test:integration
+```
+
+CI expectations:
+
+- `.github/workflows/client-matrix.yml` must be green.
+- `.github/workflows/protocol-parity.yml` must show no snapshot drift.
+- `.github/workflows/security-scan.yml` must be green or have an approved,
+  time-limited exception.
+- coverage gates must meet `release/coverage-threshold-policy.json`.
+
+### Version and protocol compatibility
+
+Before publishing:
+
+- `release-manifest.json` must match package versions and the intended
+  `client-v<version>` tag.
+- `contracts/protocol-contract.snapshot.json` must match the cache-side
+  protocol schema used by the target `dittod` release.
+- Any protocol enum or error-code change must be reflected across Node.js,
+  Java, Python, Go, and Rust before release.
+- Go has no package version field; the release tag is the version contract.
+
+### Production security posture
+
+SDK defaults must remain production-safe:
+
+- HTTPS certificate verification enabled by default.
+- Node.js and Java must not expose insecure TLS bypasses.
+- Go, Python, and Rust dev-only insecure TLS bypasses require
+  `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true` and must not be used in production.
+- Strict client-side validation should be enabled in production integrations
+  unless an application has a documented key-format incompatibility.
+- Raw TCP usage must be limited to loopback, private trusted networks, or an
+  encrypted underlay.
+
+### Rollout guidance
+
+1. Publish or stage SDK artifacts for one language at a time.
+2. Roll to one application or service group first.
+3. Watch server-side counters after rollout:
+   - `client_error_total`
+   - `client_errors_http_total`
+   - `client_errors_tcp_total`
+   - `client_error_validation_total`
+   - `client_latency_p95_estimate_ms`
+   - `namespace_quota_reject_total`
+4. For watch-heavy clients, confirm no unexpected reconnect or idle-timeout
+   pattern after deployment.
+5. Keep the previous SDK artifact available until the rollout has completed and
+   the observation window is clean.
+
+### Rollback path
+
+Rollback to the previous SDK version when:
+
+- error rate or latency regresses after client rollout,
+- protocol compatibility was misidentified,
+- TLS/auth configuration prevents production traffic from connecting,
+- a language-specific SDK behavior diverges from the contract runner.
+
+Rollback steps:
+
+1. Pin application dependencies back to the previous SDK artifact or tag.
+2. Redeploy the affected application group.
+3. Verify application health and server-side client counters.
+4. Keep the failed SDK version blocked until a new contract/security test covers
+   the failure mode.
+
+### Release evidence
+
+For each SDK release, retain:
+
+- release manifest validation output,
+- protocol parity workflow URL,
+- client matrix workflow URL,
+- security scan workflow URL,
+- coverage workflow URL,
+- generated release evidence from `scripts/generate_release_evidence.py` when
+  publishing formal artifacts.
+
 ## Watch flow examples
 
 ### Java
