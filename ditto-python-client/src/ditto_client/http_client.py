@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import dataclasses
+import base64
 import json
 
 from .http_client_base import DittoHttpClientBase
@@ -47,7 +48,12 @@ class DittoHttpClient(DittoHttpClientBase):
             return None
         self._assert_ok(status, body)
         data = json.loads(body)
-        return DittoGetResult(value=data['value'].encode('utf-8'), version=data['version'])
+        value = (
+            base64.b64decode(data["value_base64"])
+            if data.get("value_base64")
+            else data["value"].encode("utf-8")
+        )
+        return DittoGetResult(value=value, version=data['version'])
 
     def set(self, key: str, value: str, ttl_secs: int = 0, namespace: str | None = None) -> DittoSetResult:
         """Set a value. ttlSecs = 0 or omitted means no expiry."""

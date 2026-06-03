@@ -31,3 +31,15 @@ test('http client rejects devInsecureTls bypass', async () => {
     /devInsecureTls\(true\) is insecure and is no longer supported/,
   );
 });
+
+test('http client rejects rejectUnauthorized bypass', async () => {
+  assert.throws(
+    () => new TestHttpClient({
+      host: '127.0.0.1',
+      port: 443,
+      tls: true,
+      rejectUnauthorized: false,
+    }),
+    /rejectUnauthorized\(false\) is insecure and is no longer supported/,
+  );
+});

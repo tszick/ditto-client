@@ -38,8 +38,11 @@ export class DittoHttpClient extends DittoHttpClientBase {
     });
     if (resp.status === 404) return null;
     await this.assertOk(resp);
-    const body = await resp.json() as { value: string; version: number };
-    return { value: Buffer.from(body.value, 'utf8'), version: body.version };
+    const body = await resp.json() as { value?: string; value_base64?: string; version: number };
+    const value = body.value_base64
+      ? Buffer.from(body.value_base64, 'base64')
+      : Buffer.from(body.value ?? '', 'utf8');
+    return { value, version: body.version };
   }
 
   /** Set a value. ttlSecs = 0 or omitted means no expiry. */

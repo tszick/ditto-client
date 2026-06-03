@@ -206,13 +206,22 @@ func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
 		return nil, err
 	}
 	var payload struct {
-		Value   string `json:"value"`
-		Version uint64 `json:"version"`
+		Value       string `json:"value"`
+		ValueBase64 string `json:"value_base64"`
+		Version     uint64 `json:"version"`
 	}
 	if err := json.Unmarshal(b, &payload); err != nil {
 		return nil, err
 	}
-	return &GetResult{Value: []byte(payload.Value), Version: payload.Version}, nil
+	value := []byte(payload.Value)
+	if payload.ValueBase64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(payload.ValueBase64)
+		if err != nil {
+			return nil, err
+		}
+		value = decoded
+	}
+	return &GetResult{Value: value, Version: payload.Version}, nil
 }
 
 func (c *HTTPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult, error) {

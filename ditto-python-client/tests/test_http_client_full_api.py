@@ -35,6 +35,15 @@ class FullApiHandler(BaseHTTPRequestHandler):
         elif self.path == "/key/ns-key":
             self._assert_equal(self.headers.get("X-Ditto-Namespace"), "tenant-a")
             self._send(200, {"value": "value", "version": 7})
+        elif self.path == "/key/binary":
+            self._send(
+                200,
+                {
+                    "value": "lossy-fallback",
+                    "value_base64": base64.b64encode(bytes([0, 159, 146, 150, 255])).decode(),
+                    "version": 8,
+                },
+            )
         elif self.path == "/key/missing":
             self._send(404)
         elif self.path == "/key/failing":
@@ -109,6 +118,9 @@ class HttpClientFullApiTests(unittest.TestCase):
         got = self.client.get("ns-key", "tenant-a")
         self.assertEqual(got.value, b"value")
         self.assertEqual(got.version, 7)
+        binary = self.client.get("binary")
+        self.assertEqual(binary.value, bytes([0, 159, 146, 150, 255]))
+        self.assertEqual(binary.version, 8)
         self.assertTrue(self.client.delete("ns-key"))
         self.assertFalse(self.client.delete("missing"))
         self.assertEqual(self.client.delete_by_pattern("tenant:*", "tenant-a").deleted, 3)

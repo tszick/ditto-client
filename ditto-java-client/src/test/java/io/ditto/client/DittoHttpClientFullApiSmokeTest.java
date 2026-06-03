@@ -48,6 +48,9 @@ class DittoHttpClientFullApiSmokeTest {
                 DittoGetResult got = client.get("ns-key", "tenant-a");
                 assertEquals("value", got.getValueAsString());
                 assertEquals(7, got.getVersion());
+                DittoGetResult binary = client.get("binary");
+                assertArrayEquals(new byte[] {0, (byte) 159, (byte) 146, (byte) 150, (byte) 255}, binary.getValue());
+                assertEquals(8, binary.getVersion());
                 assertTrue(client.delete("ns-key"));
                 assertFalse(client.delete("missing"));
                 assertEquals(3, client.deleteByPattern("tenant:*", "tenant-a").getDeleted());
@@ -100,6 +103,11 @@ class DittoHttpClientFullApiSmokeTest {
         if (method.equals("GET") && path.equals("/key/ns-key")) {
             assertEquals("tenant-a", exchange.getRequestHeaders().getFirst("X-Ditto-Namespace"));
             send(exchange, 200, "{\"value\":\"value\",\"version\":7}");
+            return;
+        }
+        if (method.equals("GET") && path.equals("/key/binary")) {
+            String valueBase64 = Base64.getEncoder().encodeToString(new byte[] {0, (byte) 159, (byte) 146, (byte) 150, (byte) 255});
+            send(exchange, 200, "{\"value\":\"lossy-fallback\",\"value_base64\":\"" + valueBase64 + "\",\"version\":8}");
             return;
         }
         if (method.equals("DELETE") && path.equals("/key/ns-key")) {

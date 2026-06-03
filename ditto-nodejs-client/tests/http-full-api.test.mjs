@@ -57,6 +57,16 @@ test('http client exercises full endpoint surface and retry path', async () => {
       return;
     }
 
+    if (req.method === 'GET' && req.url === '/key/binary') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        value: 'lossy-fallback',
+        value_base64: Buffer.from([0, 159, 146, 150, 255]).toString('base64'),
+        version: 8,
+      }));
+      return;
+    }
+
     if (req.method === 'DELETE' && req.url === '/key/ns-key') {
       res.writeHead(204);
       res.end();
@@ -120,6 +130,9 @@ test('http client exercises full endpoint surface and retry path', async () => {
     const got = await client.get('ns-key', 'tenant-a');
     assert.equal(got.value.toString('utf8'), 'value');
     assert.equal(got.version, 7);
+    const binary = await client.get('binary');
+    assert.deepEqual([...binary.value], [0, 159, 146, 150, 255]);
+    assert.equal(binary.version, 8);
     assert.equal(await client.delete('ns-key'), true);
     assert.equal(await client.delete('missing'), false);
     assert.deepEqual(await client.deleteByPattern('tenant:*', 'tenant-a'), { deleted: 3 });

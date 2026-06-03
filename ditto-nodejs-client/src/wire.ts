@@ -632,6 +632,36 @@ export function decodeClientRequestVariant(buf: Buffer): { field: number; inner:
   throw new Error('ClientRequest oneof has no active field');
 }
 
+/** Test helper: decode KeyNamespace-like request payloads. */
+export function decodeKeyNamespaceInner(buf: Buffer): { key: string; namespace?: string } {
+  const r = new Reader(buf);
+  let key = '';
+  let namespace: string | undefined;
+  while (r.remaining() > 0) {
+    const { field, wire } = r.readTag();
+    if (field === KN_KEY && wire === WT_LD) {
+      key = r.readLD().toString('utf8');
+    } else if (field === KN_NAMESPACE && wire === WT_LD) {
+      namespace = decodeOptionalString(r.readLD());
+    } else {
+      r.skip(wire);
+    }
+  }
+  return namespace === undefined ? { key } : { key, namespace };
+}
+
+function decodeOptionalString(buf: Buffer): string | undefined {
+  const r = new Reader(buf);
+  while (r.remaining() > 0) {
+    const { field, wire } = r.readTag();
+    if (field === OPT_VALUE && wire === WT_LD) {
+      return r.readLD().toString('utf8');
+    }
+    r.skip(wire);
+  }
+  return undefined;
+}
+
 /** Re-export request-variant field numbers for tests. */
 export const REQUEST_FIELDS = {
   GET: REQ_GET,

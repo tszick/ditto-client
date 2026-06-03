@@ -1,6 +1,7 @@
 package ditto
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,12 @@ func TestHTTPClientCoversNamespacePatternStatsAndErrors(t *testing.T) {
 				t.Fatalf("unexpected get namespace header: %q", got)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"value": "value", "version": 7})
+		case r.Method == http.MethodGet && r.URL.Path == "/key/binary":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"value":        "lossy-fallback",
+				"value_base64": base64.StdEncoding.EncodeToString([]byte{0, 159, 146, 150, 255}),
+				"version":      8,
+			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/key/ns-key":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && r.URL.Path == "/key/missing":
@@ -123,6 +130,13 @@ func TestHTTPClientCoversNamespacePatternStatsAndErrors(t *testing.T) {
 	got, err := client.Get("ns-key", "tenant-a")
 	if err != nil || got == nil || string(got.Value) != "value" || got.Version != 7 {
 		t.Fatalf("get result=%+v err=%v", got, err)
+	}
+	binary, err := client.Get("binary")
+	if err != nil || binary == nil || string(binary.Value) == "lossy-fallback" || binary.Version != 8 {
+		t.Fatalf("binary get result=%+v err=%v", binary, err)
+	}
+	if want := []byte{0, 159, 146, 150, 255}; !bytes.Equal(binary.Value, want) {
+		t.Fatalf("binary get value=%v want=%v", binary.Value, want)
 	}
 	if deleted, err := client.Delete("ns-key"); err != nil || !deleted {
 		t.Fatalf("delete existing=%v err=%v", deleted, err)

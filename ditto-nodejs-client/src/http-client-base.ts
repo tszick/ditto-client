@@ -30,7 +30,7 @@ export interface DittoHttpClientOptions {
   password?: string;
   /**
    * Reject unauthorized TLS certificates.
-   * Default: true.
+   * Default: true. Passing false is rejected; use a trusted certificate instead.
    */
   rejectUnauthorized?: boolean;
   /** Insecure TLS bypass is not supported. */
@@ -101,8 +101,14 @@ export class DittoHttpClientBase {
           + 'Use a trusted certificate configuration instead.',
         );
       }
+      if (opts.rejectUnauthorized === false) {
+        throw new Error(
+          'rejectUnauthorized(false) is insecure and is no longer supported. '
+          + 'Use a trusted certificate configuration instead.',
+        );
+      }
       this.agent = new https.Agent({
-        rejectUnauthorized: opts.rejectUnauthorized ?? true,
+        rejectUnauthorized: true,
       });
     }
 

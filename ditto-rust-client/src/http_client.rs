@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use base64::Engine;
 use reqwest::{Client, Method, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
@@ -97,8 +98,14 @@ impl DittoHttpClient {
         }
         let response = self.assert_ok(response).await?;
         let body: GetResponse = response.json().await?;
+        let value = match body.value_base64 {
+            Some(value_base64) if !value_base64.is_empty() => base64::engine::general_purpose::STANDARD
+                .decode(value_base64.trim())
+                .map_err(|e| DittoError::Protocol(format!("invalid value_base64 in HTTP response: {e}")))?,
+            _ => body.value.unwrap_or_default().into_bytes(),
+        };
         Ok(Some(GetResult {
-            value: body.value.into_bytes(),
+            value,
             version: body.version,
         }))
     }
@@ -299,7 +306,8 @@ struct PingResponse {
 
 #[derive(Deserialize)]
 struct GetResponse {
-    value: String,
+    value: Option<String>,
+    value_base64: Option<String>,
     version: u64,
 }
 

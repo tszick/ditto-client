@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 
 public class DittoHttpClient extends DittoHttpClientBase {
@@ -47,9 +48,13 @@ public class DittoHttpClient extends DittoHttpClientBase {
         if (resp.statusCode() == 404) return null;
         assertOk(resp);
         Map<?, ?> body    = mapper.readValue(resp.body(), Map.class);
+        String    valueBase64 = (String) body.get("value_base64");
         String    value   = (String) body.get("value");
         long      version = ((Number) body.get("version")).longValue();
-        return new DittoGetResult(value.getBytes(StandardCharsets.UTF_8), version);
+        byte[]    bytes   = valueBase64 != null && !valueBase64.isBlank()
+                ? Base64.getDecoder().decode(valueBase64)
+                : value.getBytes(StandardCharsets.UTF_8);
+        return new DittoGetResult(bytes, version);
     }
 
     /** Set a value. ttlSecs = 0 or omitted means no expiry. */

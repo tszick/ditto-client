@@ -90,6 +90,12 @@ interface Waiter {
   frame:   Buffer | null;
 }
 
+interface WatchRegistration {
+  key: string;
+  namespace?: string;
+  callback: (value: Buffer | null, version: number) => void;
+}
+
 export class DittoTcpClient {
   private readonly host: string;
   private readonly port: number;
@@ -107,9 +113,9 @@ export class DittoTcpClient {
   private socket:   net.Socket | null = null;
   private recvBuf:  Buffer = Buffer.alloc(0);
 
-  // DITTO-02: watch callbacks keyed by watched key.
+  // DITTO-02: watch callbacks keyed by the server-side watched key.
   // WatchEvent frames from the server are routed here instead of the inflight queue.
-  private watchCallbacks: Map<string, (value: Buffer | null, version: number) => void> = new Map();
+  private watchCallbacks: Map<string, WatchRegistration> = new Map();
 
   /**
    * Requests that have been SENT and are awaiting a response (ordered FIFO).
@@ -189,7 +195,7 @@ export class DittoTcpClient {
    * The returned `value` is a raw Buffer (the stored bytes, unchanged).
    */
   async get(key: string, namespace?: string): Promise<DittoGetResult | null> {
-    this.validateCoreInputs('watch', key, namespace);
+    this.validateCoreInputs('get', key, namespace);
     const resp = await this.send(encodeGet(key, namespace));
     if (resp.type === 'NotFound') return null;
     if (resp.type === 'Value')    return { value: resp.value, version: resp.version };
@@ -263,8 +269,13 @@ export class DittoTcpClient {
   */
   async watch(key: string, callback: (value: Buffer | null, version: number) => void, namespace?: string): Promise<void> {
     this.validateCoreInputs('watch', key, namespace);
-    this.watchCallbacks.set(key, callback);
-    const resp = await this.send(encodeWatch(key, namespace));
+    const normalizedNamespace = normalizeNamespace(namespace);
+    this.watchCallbacks.set(watchCallbackKey(key, normalizedNamespace), {
+      key,
+      namespace: normalizedNamespace,
+      callback,
+    });
+    const resp = await this.send(encodeWatch(key, normalizedNamespace));
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     if (resp.type !== 'Watching') throw new Error(`Unexpected response to Watch: ${resp.type}`);
   }
@@ -273,10 +284,11 @@ export class DittoTcpClient {
    * Cancel the subscription for `key`. No-op if the key is not being watched.
    */
   async unwatch(key: string, namespace?: string): Promise<void> {
-    this.validateCoreInputs('get', key, namespace);
-    this.watchCallbacks.delete(key);
+    this.validateCoreInputs('unwatch', key, namespace);
+    const normalizedNamespace = normalizeNamespace(namespace);
+    this.watchCallbacks.delete(watchCallbackKey(key, normalizedNamespace));
     if (!this.socket) return; // already disconnected — nothing to send
-    const resp = await this.send(encodeUnwatch(key, namespace));
+    const resp = await this.send(encodeUnwatch(key, normalizedNamespace));
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     if (resp.type !== 'Unwatched') throw new Error(`Unexpected response to Unwatch: ${resp.type}`);
   }
@@ -337,8 +349,8 @@ export class DittoTcpClient {
 
       // DITTO-02: WatchEvent frames are server-push; route to callback, not inflight queue.
       if (decoded.type === 'WatchEvent') {
-        const cb = this.watchCallbacks.get(decoded.key);
-        cb?.(decoded.value, decoded.version);
+        const registration = this.watchCallbacks.get(decoded.key);
+        registration?.callback(decoded.value, decoded.version);
         continue;
       }
 
@@ -495,10 +507,10 @@ export class DittoTcpClient {
 
   /** Re-send Watch for all active callbacks after a reconnect. */
   private async reRegisterWatches(): Promise<void> {
-    for (const key of this.watchCallbacks.keys()) {
+    for (const registration of this.watchCallbacks.values()) {
       if (!this.socket) break;
       // Send Watch frame directly (bypass send() to avoid adding to inflight before auth).
-      const frame = encodeWatch(key);
+      const frame = encodeWatch(registration.key, registration.namespace);
       await new Promise<void>((resolve, reject) => {
         this.inflight.push({
           resolve: () => resolve(),
@@ -583,3 +595,12 @@ export class DittoTcpClient {
 
 const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
 const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
+
+function normalizeNamespace(namespace?: string): string | undefined {
+  const trimmed = namespace?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function watchCallbackKey(key: string, namespace?: string): string {
+  return namespace ? `${namespace}::${key}` : key;
+}
