@@ -5,6 +5,8 @@ export { DittoError }      from './types.js';
 export type {
   DittoGetResult,
   DittoSetResult,
+  DittoSetNxResult,
+  DittoCounterResult,
   DittoDeleteByPatternResult,
   DittoSetTtlByPatternResult,
   DittoStatsResult,

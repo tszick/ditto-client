@@ -7,7 +7,8 @@ use serde_json::json;
 
 use crate::errors::{DittoError, Result};
 use crate::types::{
-    DeleteByPatternResult, GetResult, SetResult, SetTtlByPatternResult, StatsResult,
+    CounterResult, DeleteByPatternResult, GetResult, SetNxResult, SetResult, SetTtlByPatternResult,
+    StatsResult,
 };
 use crate::validation::{normalized_namespace, validate_core_inputs, validate_pattern_inputs};
 
@@ -53,19 +54,14 @@ impl DittoHttpClient {
     pub fn new(options: HttpClientOptions) -> Result<Self> {
         let scheme = if options.tls { "https" } else { "http" };
         if options.tls && options.dev_insecure_tls {
-            if !allow_dev_insecure_tls() {
-                return Err(DittoError::Validation(
-                    "insecure TLS verification requires DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true for local/self-signed development".to_string(),
-                ));
-            }
-            eprintln!(
-                "WARNING: insecure TLS certificate verification is enabled for local development only; do not use dev_insecure_tls in production"
-            );
+            return Err(DittoError::Validation(
+                "dev_insecure_tls=true is insecure and is no longer supported. Use a trusted certificate configuration instead.".to_string(),
+            ));
         }
         let client = Client::builder()
             .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)
-            .danger_accept_invalid_certs(options.tls && options.dev_insecure_tls)
+            .danger_accept_invalid_certs(false)
             .build()?;
 
         Ok(Self {
@@ -145,6 +141,78 @@ impl DittoHttpClient {
     ) -> Result<SetResult> {
         self.set(key, value.as_bytes().to_vec(), ttl_secs, namespace)
             .await
+    }
+
+    /// Atomic create-if-absent. Returns `created=false` (and the existing
+    /// version) when the key already exists — no write is performed.
+    pub async fn set_nx(
+        &self,
+        key: &str,
+        value: impl Into<Vec<u8>>,
+        ttl_secs: Option<u64>,
+        namespace: Option<&str>,
+    ) -> Result<SetNxResult> {
+        let namespace = normalized_namespace(self.strict_mode, namespace)?;
+        validate_core_inputs(self.strict_mode, "set", key, namespace.as_deref())?;
+        let mut path = format!("/key/{}?nx=1", url_encode(key));
+        if let Some(ttl) = ttl_secs.filter(|ttl| *ttl > 0) {
+            path.push_str(&format!("&ttl={ttl}"));
+        }
+        let response = self
+            .request(
+                Method::POST,
+                &path,
+                namespace.as_deref(),
+                Some(("application/octet-stream", value.into())),
+            )
+            .await?;
+        if is_atomic_unsupported_status(response.status()) {
+            return Err(atomic_unsupported_error(response, "SET_NX").await);
+        }
+        let response = self.assert_ok(response).await?;
+        let body: SetNxResponse = response.json().await?;
+        Ok(SetNxResult {
+            created: body.created,
+            version: parse_u64_field(&body.version, "version")?,
+        })
+    }
+
+    /// Atomic counter increment. Creates the key at `delta` if absent
+    /// (with `ttl_secs_on_create`); never resets the TTL of an existing key.
+    pub async fn incr(
+        &self,
+        key: &str,
+        delta: i64,
+        ttl_secs_on_create: Option<u64>,
+        namespace: Option<&str>,
+    ) -> Result<CounterResult> {
+        let namespace = normalized_namespace(self.strict_mode, namespace)?;
+        validate_core_inputs(self.strict_mode, "set", key, namespace.as_deref())?;
+        // Send delta as a JSON string so the int64 survives any consumer that
+        // would otherwise coerce a large number to a float (server accepts both).
+        let payload = if let Some(ttl) = ttl_secs_on_create.filter(|ttl| *ttl > 0) {
+            json!({ "delta": delta.to_string(), "ttl_secs_on_create": ttl })
+        } else {
+            json!({ "delta": delta.to_string() })
+        };
+        let path = format!("/key/{}/incr", url_encode(key));
+        let response = self
+            .request(
+                Method::POST,
+                &path,
+                namespace.as_deref(),
+                Some(("application/json", serde_json::to_vec(&payload)?)),
+            )
+            .await?;
+        if is_atomic_unsupported_status(response.status()) {
+            return Err(atomic_unsupported_error(response, "INCR").await);
+        }
+        let response = self.assert_ok(response).await?;
+        let body: IncrResponse = response.json().await?;
+        Ok(CounterResult {
+            value: parse_i64_field(&body.value, "value")?,
+            version: parse_u64_field(&body.version, "version")?,
+        })
     }
 
     pub async fn delete(&self, key: &str, namespace: Option<&str>) -> Result<bool> {
@@ -269,13 +337,39 @@ impl DittoHttpClient {
     }
 }
 
-fn allow_dev_insecure_tls() -> bool {
-    std::env::var("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV")
-        .map(|value| {
-            let value = value.trim();
-            value.eq_ignore_ascii_case("true") || value == "1"
-        })
-        .unwrap_or(false)
+/// True for the statuses an OLD dittod (no atomic-primitive routes) returns
+/// for SET_NX/INCR: 400 (rejects the request shape), 404 (route missing),
+/// 501 (explicitly unsupported). TypeMismatch/Overflow are 409 and so flow
+/// through the normal error path instead.
+fn is_atomic_unsupported_status(status: StatusCode) -> bool {
+    matches!(status.as_u16(), 400 | 404 | 501)
+}
+
+async fn atomic_unsupported_error(response: reqwest::Response, operation: &str) -> DittoError {
+    let body = response.bytes().await.unwrap_or_default();
+    let payload = serde_json::from_slice::<ErrorResponse>(&body).ok();
+    if payload.as_ref().and_then(|p| p.error.as_deref()) == Some("UnsupportedRequest") {
+        let message = payload
+            .and_then(|p| p.message)
+            .unwrap_or_else(|| "UnsupportedRequest".to_string());
+        return DittoError::server("UnsupportedRequest", message);
+    }
+    DittoError::server(
+        "UnsupportedRequest",
+        format!(
+            "UnsupportedRequest: server does not support {operation}. Upgrade dittod to a version with atomic primitives."
+        ),
+    )
+}
+
+fn parse_u64_field(raw: &str, field: &str) -> Result<u64> {
+    raw.parse::<u64>()
+        .map_err(|_| DittoError::Protocol(format!("invalid {field} in HTTP response: {raw:?}")))
+}
+
+fn parse_i64_field(raw: &str, field: &str) -> Result<i64> {
+    raw.parse::<i64>()
+        .map_err(|_| DittoError::Protocol(format!("invalid {field} in HTTP response: {raw:?}")))
 }
 
 fn http_status_to_code(status: StatusCode) -> &'static str {
@@ -317,24 +411,30 @@ struct ErrorResponse {
     message: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SetNxResponse {
+    created: bool,
+    version: String,
+}
+
+#[derive(Deserialize)]
+struct IncrResponse {
+    value: String,
+    version: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn dev_insecure_tls_requires_explicit_env() {
-        unsafe {
-            std::env::remove_var("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV");
-        }
+    fn dev_insecure_tls_is_rejected() {
         let err = DittoHttpClient::new(HttpClientOptions {
             tls: true,
             dev_insecure_tls: true,
             ..HttpClientOptions::default()
         })
         .unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV")
-        );
+        assert!(err.to_string().contains("no longer supported"));
     }
 }

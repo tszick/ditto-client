@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -296,6 +297,70 @@ func (c *TCPClient) SetStringInNamespace(key, value, namespace string, ttlSecs .
 	return c.SetInNamespace(key, []byte(value), namespace, ttlSecs...)
 }
 
+func (c *TCPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace ...string) (*SetNXResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return nil, normalizeAtomicTCPErr(err, "SET_NX")
+	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
+		return nil, err
+	}
+	var ttl *uint64
+	if ttlSecs > 0 {
+		ttl = &ttlSecs
+	}
+	resp, err := c.sendRequestLocked(encodeSetNX(key, value, ttl, ns))
+	if err != nil {
+		return nil, normalizeAtomicTCPErr(err, "SET_NX")
+	}
+	switch resp.kind {
+	case respSetNX:
+		return &SetNXResult{Created: resp.created, Version: resp.version}, nil
+	case respError:
+		return nil, &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return nil, normalizeAtomicTCPErr(fmt.Errorf("unexpected response"), "SET_NX")
+	}
+}
+
+func (c *TCPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, namespace ...string) (*IncrResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnectedLocked(); err != nil {
+		return nil, normalizeAtomicTCPErr(err, "INCR")
+	}
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
+		return nil, err
+	}
+	var deltaPtr *int64
+	deltaPtr = &delta
+	var ttl *uint64
+	if ttlSecsOnCreate > 0 {
+		ttl = &ttlSecsOnCreate
+	}
+	resp, err := c.sendRequestLocked(encodeIncr(key, deltaPtr, ttl, ns))
+	if err != nil {
+		return nil, normalizeAtomicTCPErr(err, "INCR")
+	}
+	switch resp.kind {
+	case respCounter:
+		return &IncrResult{Value: resp.counter, Version: resp.version}, nil
+	case respError:
+		return nil, &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return nil, normalizeAtomicTCPErr(fmt.Errorf("unexpected response"), "INCR")
+	}
+}
+
 func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -463,6 +528,29 @@ func (c *TCPClient) WaitWatchEvent() (*WatchEventResult, error) {
 	default:
 		return nil, fmt.Errorf("unexpected response")
 	}
+}
+
+func normalizeAtomicTCPErr(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	if de, ok := err.(*DittoError); ok {
+		return de
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "unsupported") ||
+		strings.Contains(msg, "protocol") ||
+		strings.Contains(msg, "decode") ||
+		strings.Contains(msg, "clientresponse oneof") ||
+		strings.Contains(msg, "unexpected response") ||
+		strings.Contains(msg, "eof") ||
+		strings.Contains(msg, "connection reset") {
+		return &DittoError{
+			Code:    ErrUnsupportedRequest,
+			Message: fmt.Sprintf("server does not support %s; upgrade dittod to a version with atomic primitives", operation),
+		}
+	}
+	return err
 }
 
 func normalizeNamespace(namespace ...string) *string {

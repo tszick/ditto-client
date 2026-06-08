@@ -33,6 +33,8 @@ const REQ_WATCH               = 6;
 const REQ_UNWATCH             = 7;
 const REQ_DELETE_BY_PATTERN   = 8;
 const REQ_SET_TTL_BY_PATTERN  = 9;
+const REQ_SET_NX              = 10;
+const REQ_INCR                = 11;
 
 // ClientResponse.oneof response
 const RESP_VALUE                = 1;
@@ -47,6 +49,8 @@ const RESP_UNWATCHED            = 9;
 const RESP_WATCH_EVENT          = 10;
 const RESP_PATTERN_DELETED      = 11;
 const RESP_PATTERN_TTL_UPDATED  = 12;
+const RESP_SET_NX              = 13;
+const RESP_COUNTER             = 14;
 
 // Wire types
 const WT_VARINT = 0;
@@ -64,11 +68,19 @@ const SR_NAMESPACE  = 4;
 const STBP_PATTERN  = 1;
 const STBP_TTL_SECS = 2;
 const STBP_NAMESPACE = 3;
+const INCR_KEY = 1;
+const INCR_DELTA = 2;
+const INCR_TTL_SECS_ON_CREATE = 3;
+const INCR_NAMESPACE = 4;
 const AUTH_TOKEN    = 1;
 const VAL_KEY       = 1;
 const VAL_VALUE     = 2;
 const VAL_VERSION   = 3;
 const VR_VERSION    = 1;
+const SNX_CREATED   = 1;
+const SNX_VERSION   = 2;
+const CTR_VALUE     = 1;
+const CTR_VERSION   = 2;
 const ERR_CODE      = 1;
 const ERR_MESSAGE   = 2;
 const WE_KEY        = 1;
@@ -90,6 +102,9 @@ const ERROR_CODE_NAMES: DittoErrorCode[] = [
   'CircuitOpen',
   'NamespaceQuotaExceeded',
   'AuthFailed',
+  'UnsupportedRequest',
+  'TypeMismatch',
+  'Overflow',
 ];
 
 // ---------------------------------------------------------------------------
@@ -121,6 +136,12 @@ class Writer {
     if (isZero) return;
     this.tag(field, WT_VARINT);
     this.varint(value);
+  }
+
+  int64Field(field: number, value: number | bigint): void {
+    const bigintValue = typeof value === 'bigint' ? value : BigInt(value);
+    this.tag(field, WT_VARINT);
+    this.varint(BigInt.asUintN(64, bigintValue));
   }
 
   /** Encode an enum/uint32-typed field (skip if value is 0). */
@@ -202,6 +223,10 @@ class Reader {
       throw new Error(`varint ${v} exceeds Number.MAX_SAFE_INTEGER`);
     }
     return Number(v);
+  }
+
+  readInt64(): bigint {
+    return BigInt.asIntN(64, this.readVarint());
   }
 
   readTag(): { field: number; wire: number } {
@@ -302,6 +327,26 @@ function encodeSetTtlByPatternRequest(
   return w.finish();
 }
 
+function encodeIncrRequest(
+  key: string,
+  delta?: bigint | number,
+  ttlSecsOnCreate?: number,
+  namespace?: string,
+): Buffer {
+  const w = new Writer();
+  w.stringField(INCR_KEY, key);
+  if (delta !== undefined) {
+    w.int64Field(INCR_DELTA, delta);
+  }
+  if (ttlSecsOnCreate !== undefined && ttlSecsOnCreate > 0) {
+    w.ldField(INCR_TTL_SECS_ON_CREATE, encodeOptionalUint64(ttlSecsOnCreate));
+  }
+  if (hasNamespace(namespace)) {
+    w.ldField(INCR_NAMESPACE, encodeOptionalString(namespace));
+  }
+  return w.finish();
+}
+
 function encodeAuthRequest(token: string): Buffer {
   const w = new Writer();
   w.stringField(AUTH_TOKEN, token);
@@ -382,6 +427,27 @@ export function encodeSetTtlByPattern(
   );
 }
 
+export function encodeSetNX(
+  key: string,
+  value: Buffer,
+  ttlSecs?: number,
+  namespace?: string,
+): Buffer {
+  return wrapClientRequest(REQ_SET_NX, encodeSetRequest(key, value, ttlSecs, namespace));
+}
+
+export function encodeIncr(
+  key: string,
+  delta?: bigint | number,
+  ttlSecsOnCreate?: number,
+  namespace?: string,
+): Buffer {
+  return wrapClientRequest(
+    REQ_INCR,
+    encodeIncrRequest(key, delta, ttlSecsOnCreate, namespace),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // ClientResponse decoding
 // ---------------------------------------------------------------------------
@@ -398,7 +464,9 @@ export type ClientResponse =
   | { type: 'Unwatched' }
   | { type: 'WatchEvent'; key: string; value: Buffer | null; version: number }
   | { type: 'PatternDeleted';    deleted: number }
-  | { type: 'PatternTtlUpdated'; updated: number };
+  | { type: 'PatternTtlUpdated'; updated: number }
+  | { type: 'SetNx'; created: boolean; version: bigint }
+  | { type: 'Counter'; value: bigint; version: bigint };
 
 export function decodeResponse(buf: Buffer): ClientResponse {
   // Top-level: Envelope.
@@ -446,6 +514,8 @@ export function decodeResponse(buf: Buffer): ClientResponse {
       case RESP_WATCH_EVENT:         return decodeWatchEvent(inner);
       case RESP_PATTERN_DELETED:     return { type: 'PatternDeleted',    deleted: decodeCount(inner) };
       case RESP_PATTERN_TTL_UPDATED: return { type: 'PatternTtlUpdated', updated: decodeCount(inner) };
+      case RESP_SET_NX:              return decodeSetNxResponse(inner);
+      case RESP_COUNTER:             return decodeCounterResponse(inner);
       default: continue;
     }
   }
@@ -500,6 +570,40 @@ function decodeErrorResponse(buf: Buffer): ClientResponse {
   }
   const code = ERROR_CODE_NAMES[codeIdx] ?? 'InternalError';
   return { type: 'Error', code, message };
+}
+
+function decodeSetNxResponse(buf: Buffer): ClientResponse {
+  const r = new Reader(buf);
+  let created = false;
+  let version = 0n;
+  while (r.remaining() > 0) {
+    const { field, wire } = r.readTag();
+    if (field === SNX_CREATED && wire === WT_VARINT) {
+      created = r.readVarint() !== 0n;
+    } else if (field === SNX_VERSION && wire === WT_VARINT) {
+      version = r.readVarint();
+    } else {
+      r.skip(wire);
+    }
+  }
+  return { type: 'SetNx', created, version };
+}
+
+function decodeCounterResponse(buf: Buffer): ClientResponse {
+  const r = new Reader(buf);
+  let value = 0n;
+  let version = 0n;
+  while (r.remaining() > 0) {
+    const { field, wire } = r.readTag();
+    if (field === CTR_VALUE && wire === WT_VARINT) {
+      value = r.readInt64();
+    } else if (field === CTR_VERSION && wire === WT_VARINT) {
+      version = r.readVarint();
+    } else {
+      r.skip(wire);
+    }
+  }
+  return { type: 'Counter', value, version };
 }
 
 function decodeWatchEvent(buf: Buffer): ClientResponse {
@@ -591,6 +695,20 @@ export function encodeVersionResponseInner(version: number): Buffer {
   return w.finish();
 }
 
+export function encodeSetNxResponseInner(created: boolean, version: number | bigint): Buffer {
+  const w = new Writer();
+  w.uint64Field(SNX_CREATED, created ? 1 : 0);
+  w.uint64Field(SNX_VERSION, version);
+  return w.finish();
+}
+
+export function encodeCounterResponseInner(value: number | bigint, version: number | bigint): Buffer {
+  const w = new Writer();
+  w.int64Field(CTR_VALUE, value);
+  w.uint64Field(CTR_VERSION, version);
+  return w.finish();
+}
+
 /** Build a `WatchEvent` inner-message buffer with a present value. */
 export function encodeWatchEventInner(key: string, value: Buffer, version: number): Buffer {
   const w = new Writer();
@@ -673,6 +791,8 @@ export const REQUEST_FIELDS = {
   UNWATCH: REQ_UNWATCH,
   DELETE_BY_PATTERN: REQ_DELETE_BY_PATTERN,
   SET_TTL_BY_PATTERN: REQ_SET_TTL_BY_PATTERN,
+  SET_NX: REQ_SET_NX,
+  INCR: REQ_INCR,
 } as const;
 
 /** Re-export response-variant field numbers for tests that forge frames. */
@@ -689,4 +809,6 @@ export const RESPONSE_FIELDS = {
   WATCH_EVENT: RESP_WATCH_EVENT,
   PATTERN_DELETED: RESP_PATTERN_DELETED,
   PATTERN_TTL_UPDATED: RESP_PATTERN_TTL_UPDATED,
+  SET_NX: RESP_SET_NX,
+  COUNTER: RESP_COUNTER,
 } as const;

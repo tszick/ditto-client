@@ -15,6 +15,8 @@ const REQ_WATCH: u32 = 6;
 const REQ_UNWATCH: u32 = 7;
 const REQ_DELETE_BY_PATTERN: u32 = 8;
 const REQ_SET_TTL_BY_PATTERN: u32 = 9;
+const REQ_SET_NX: u32 = 10;
+const REQ_INCR: u32 = 11;
 
 const RESP_VALUE: u32 = 1;
 const RESP_OK: u32 = 2;
@@ -28,6 +30,8 @@ const RESP_UNWATCHED: u32 = 9;
 const RESP_WATCH_EVENT: u32 = 10;
 const RESP_PATTERN_DELETED: u32 = 11;
 const RESP_PATTERN_TTL_UPDATED: u32 = 12;
+const RESP_SET_NX: u32 = 13;
+const RESP_COUNTER: u32 = 14;
 
 const WT_VARINT: u32 = 0;
 const WT_LD: u32 = 2;
@@ -43,6 +47,14 @@ const SR_NAMESPACE: u32 = 4;
 const STBP_PATTERN: u32 = 1;
 const STBP_TTL_SECS: u32 = 2;
 const STBP_NAMESPACE: u32 = 3;
+const INCR_KEY: u32 = 1;
+const INCR_DELTA: u32 = 2;
+const INCR_TTL_SECS_ON_CREATE: u32 = 3;
+const INCR_NAMESPACE: u32 = 4;
+const SNX_CREATED: u32 = 1;
+const SNX_VERSION: u32 = 2;
+const CTR_VALUE: u32 = 1;
+const CTR_VERSION: u32 = 2;
 const AUTH_TOKEN: u32 = 1;
 const VAL_KEY: u32 = 1;
 const VAL_VALUE: u32 = 2;
@@ -87,6 +99,14 @@ pub enum ClientResponse {
     PatternTtlUpdated {
         updated: u64,
     },
+    SetNx {
+        created: bool,
+        version: u64,
+    },
+    Counter {
+        value: i64,
+        version: u64,
+    },
 }
 
 pub fn encode_get(key: &str, namespace: Option<&str>) -> Vec<u8> {
@@ -104,6 +124,31 @@ pub fn encode_set(
 
 pub fn encode_delete(key: &str, namespace: Option<&str>) -> Vec<u8> {
     wrap_client_request(REQ_DELETE, encode_key_namespace(key, namespace))
+}
+
+/// SET_NX reuses the SetRequest wire shape (proto: `SetRequest set_nx = 10`).
+pub fn encode_set_nx(
+    key: &str,
+    value: &[u8],
+    ttl_secs: Option<u64>,
+    namespace: Option<&str>,
+) -> Vec<u8> {
+    wrap_client_request(
+        REQ_SET_NX,
+        encode_set_request(key, value, ttl_secs, namespace),
+    )
+}
+
+pub fn encode_incr(
+    key: &str,
+    delta: i64,
+    ttl_secs_on_create: Option<u64>,
+    namespace: Option<&str>,
+) -> Vec<u8> {
+    wrap_client_request(
+        REQ_INCR,
+        encode_incr_request(key, delta, ttl_secs_on_create, namespace),
+    )
 }
 
 pub fn encode_ping() -> Vec<u8> {
@@ -190,6 +235,8 @@ pub fn decode_response(payload: &[u8]) -> Result<ClientResponse> {
             RESP_PATTERN_TTL_UPDATED => Ok(ClientResponse::PatternTtlUpdated {
                 updated: decode_count(inner)?,
             }),
+            RESP_SET_NX => decode_set_nx_response(inner),
+            RESP_COUNTER => decode_counter_response(inner),
             _ => continue,
         };
     }
@@ -231,6 +278,26 @@ fn encode_set_request(
     }
     if let Some(namespace) = namespace.filter(|ns| !ns.trim().is_empty()) {
         writer.ld_field(SR_NAMESPACE, &encode_optional_string(namespace));
+    }
+    writer.finish()
+}
+
+fn encode_incr_request(
+    key: &str,
+    delta: i64,
+    ttl_secs_on_create: Option<u64>,
+    namespace: Option<&str>,
+) -> Vec<u8> {
+    let mut writer = Writer::default();
+    writer.string_field(INCR_KEY, key);
+    // `delta` is a proto `int64` (two's-complement varint). Always emitted so the
+    // server uses the caller's delta verbatim rather than its absent-default of 1.
+    writer.int64_field(INCR_DELTA, delta);
+    if let Some(ttl) = ttl_secs_on_create.filter(|ttl| *ttl > 0) {
+        writer.ld_field(INCR_TTL_SECS_ON_CREATE, &encode_optional_u64(ttl));
+    }
+    if let Some(namespace) = namespace.filter(|ns| !ns.trim().is_empty()) {
+        writer.ld_field(INCR_NAMESPACE, &encode_optional_string(namespace));
     }
     writer.finish()
 }
@@ -368,6 +435,36 @@ fn decode_optional_bytes(buf: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+fn decode_set_nx_response(buf: &[u8]) -> Result<ClientResponse> {
+    let mut reader = Reader::new(buf);
+    let mut created = false;
+    let mut version = 0;
+    while reader.remaining() > 0 {
+        let (field, wire) = reader.read_tag()?;
+        match (field, wire) {
+            (SNX_CREATED, WT_VARINT) => created = reader.read_varint()? != 0,
+            (SNX_VERSION, WT_VARINT) => version = reader.read_varint()?,
+            _ => reader.skip(wire)?,
+        }
+    }
+    Ok(ClientResponse::SetNx { created, version })
+}
+
+fn decode_counter_response(buf: &[u8]) -> Result<ClientResponse> {
+    let mut reader = Reader::new(buf);
+    let mut value = 0i64;
+    let mut version = 0;
+    while reader.remaining() > 0 {
+        let (field, wire) = reader.read_tag()?;
+        match (field, wire) {
+            (CTR_VALUE, WT_VARINT) => value = reader.read_int64()?,
+            (CTR_VERSION, WT_VARINT) => version = reader.read_varint()?,
+            _ => reader.skip(wire)?,
+        }
+    }
+    Ok(ClientResponse::Counter { value, version })
+}
+
 fn decode_count(buf: &[u8]) -> Result<u64> {
     let mut reader = Reader::new(buf);
     let mut count = 0;
@@ -395,6 +492,9 @@ fn error_code_name(idx: u64) -> &'static str {
         8 => "CircuitOpen",
         9 => "NamespaceQuotaExceeded",
         10 => "AuthFailed",
+        11 => "UnsupportedRequest",
+        12 => "TypeMismatch",
+        13 => "Overflow",
         _ => "InternalError",
     }
 }
@@ -423,6 +523,14 @@ impl Writer {
         }
         self.tag(field, WT_VARINT);
         self.varint(value);
+    }
+
+    /// Encode a proto `int64` field. Unlike `uint64_field` this always emits
+    /// (even for 0) because INCR delta is explicit-presence and 0 is meaningful,
+    /// and negatives are written as a 10-byte two's-complement varint.
+    fn int64_field(&mut self, field: u32, value: i64) {
+        self.tag(field, WT_VARINT);
+        self.varint(value as u64);
     }
 
     fn ld_field(&mut self, field: u32, payload: &[u8]) {
@@ -489,6 +597,10 @@ impl<'a> Reader<'a> {
         Err(DittoError::Protocol("truncated varint".into()))
     }
 
+    fn read_int64(&mut self) -> Result<i64> {
+        Ok(self.read_varint()? as i64)
+    }
+
     fn read_tag(&mut self) -> Result<(u32, u32)> {
         let tag = self.read_varint()? as u32;
         Ok((tag >> 3, tag & 0x7))
@@ -539,6 +651,64 @@ mod tests {
         assert_eq!(&frame[0..4], &[0, 0, 0, 6]);
         assert_eq!(&frame[4..], &[8, 1, 18, 2, 34, 0]);
     }
+
+    #[test]
+    fn decodes_set_nx_response() {
+        let frame = test_support::frame_set_nx(true, 42);
+        // strip the 4-byte length prefix before decoding the envelope
+        let resp = decode_response(&frame[4..]).unwrap();
+        assert_eq!(
+            resp,
+            ClientResponse::SetNx {
+                created: true,
+                version: 42
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_set_nx_existing_keeps_version_without_create() {
+        let frame = test_support::frame_set_nx(false, 7);
+        let resp = decode_response(&frame[4..]).unwrap();
+        assert_eq!(
+            resp,
+            ClientResponse::SetNx {
+                created: false,
+                version: 7
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_counter_response_including_negative_values() {
+        for value in [-5i64, 0, 1, i64::MIN, i64::MAX] {
+            let frame = test_support::frame_counter(value, 3);
+            let resp = decode_response(&frame[4..]).unwrap();
+            assert_eq!(resp, ClientResponse::Counter { value, version: 3 });
+        }
+    }
+
+    #[test]
+    fn incr_encodes_negative_delta_as_twos_complement_varint() {
+        // proto int64 -1 is a 10-byte all-0xFF/0x01 varint (not zigzag).
+        let frame = encode_incr("k", -1, None, None);
+        // The delta field (tag 0x10 = field 2, varint) must be followed by the
+        // 10-byte two's-complement encoding of -1.
+        let needle = [
+            0x10u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ];
+        assert!(
+            frame.windows(needle.len()).any(|w| w == needle),
+            "expected two's-complement delta encoding in frame {frame:?}"
+        );
+    }
+
+    #[test]
+    fn error_code_names_cover_atomic_primitive_codes() {
+        assert_eq!(error_code_name(11), "UnsupportedRequest");
+        assert_eq!(error_code_name(12), "TypeMismatch");
+        assert_eq!(error_code_name(13), "Overflow");
+    }
 }
 
 #[cfg(test)]
@@ -581,6 +751,20 @@ pub(crate) mod test_support {
         let mut inner = Writer::default();
         inner.uint64_field(VR_VERSION, version);
         frame_client_response(RESP_OK, &inner.finish())
+    }
+
+    pub(crate) fn frame_set_nx(created: bool, version: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.uint64_field(SNX_CREATED, if created { 1 } else { 0 });
+        inner.uint64_field(SNX_VERSION, version);
+        frame_client_response(RESP_SET_NX, &inner.finish())
+    }
+
+    pub(crate) fn frame_counter(value: i64, version: u64) -> Vec<u8> {
+        let mut inner = Writer::default();
+        inner.int64_field(CTR_VALUE, value);
+        inner.uint64_field(CTR_VERSION, version);
+        frame_client_response(RESP_COUNTER, &inner.finish())
     }
 
     pub(crate) fn frame_pattern_deleted(deleted: u64) -> Vec<u8> {

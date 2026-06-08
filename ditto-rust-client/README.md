@@ -28,7 +28,8 @@ async fn main() -> ditto_rust_client::Result<()> {
 ## TLS behavior
 
 - TLS certificate verification is enabled by default when `tls: true`.
-- `dev_insecure_tls: true` is only for local/self-signed development and requires `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true`.
+- `dev_insecure_tls: true` is insecure and is no longer supported.
+- Use a trusted certificate configuration instead of disabling verification.
 - Production clients should keep certificate verification enabled.
 
 ## Tests

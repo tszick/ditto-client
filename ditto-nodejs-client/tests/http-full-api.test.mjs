@@ -18,7 +18,7 @@ function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
   });
 }
 
@@ -44,7 +44,7 @@ test('http client exercises full endpoint surface and retry path', async () => {
     if (req.method === 'PUT' && req.url === '/key/ns-key?ttl=30') {
       assert.equal(req.headers['x-ditto-namespace'], 'tenant-a');
       assert.equal(req.headers['content-type'], 'text/plain');
-      assert.equal(await readBody(req), 'value');
+      assert.equal((await readBody(req)).toString('utf8'), 'value');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ version: 7 }));
       return;
@@ -73,6 +73,23 @@ test('http client exercises full endpoint surface and retry path', async () => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/key/lease-key?nx=1&ttl=30') {
+      assert.equal(req.headers['x-ditto-namespace'], 'tenant-a');
+      assert.equal(req.headers['content-type'], 'application/octet-stream');
+      assert.deepEqual(await readBody(req), Buffer.from([1, 2, 3]));
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ created: true, version: '9' }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/key/counter/incr') {
+      assert.equal(req.headers['x-ditto-namespace'], 'tenant-a');
+      assert.deepEqual(JSON.parse((await readBody(req)).toString('utf8')), { delta: '11' });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ value: '11', version: '12' }));
+      return;
+    }
+
     if (req.method === 'DELETE' && req.url === '/key/missing') {
       res.writeHead(404);
       res.end();
@@ -81,14 +98,14 @@ test('http client exercises full endpoint surface and retry path', async () => {
 
     if (req.method === 'POST' && req.url === '/keys/delete-by-pattern') {
       assert.equal(req.headers['x-ditto-namespace'], 'tenant-a');
-      assert.deepEqual(JSON.parse(await readBody(req)), { pattern: 'tenant:*' });
+      assert.deepEqual(JSON.parse((await readBody(req)).toString('utf8')), { pattern: 'tenant:*' });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ deleted: 3 }));
       return;
     }
 
     if (req.method === 'POST' && req.url === '/keys/ttl-by-pattern') {
-      assert.deepEqual(JSON.parse(await readBody(req)), { pattern: 'tenant:*', ttl_secs: 45 });
+      assert.deepEqual(JSON.parse((await readBody(req)).toString('utf8')), { pattern: 'tenant:*', ttl_secs: 45 });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ updated: 4 }));
       return;
@@ -137,6 +154,14 @@ test('http client exercises full endpoint surface and retry path', async () => {
     assert.equal(await client.delete('missing'), false);
     assert.deepEqual(await client.deleteByPattern('tenant:*', 'tenant-a'), { deleted: 3 });
     assert.deepEqual(await client.setTtlByPattern('tenant:*', 45), { updated: 4 });
+    assert.deepEqual(await client.setNX('lease-key', Buffer.from([1, 2, 3]), 30, 'tenant-a'), {
+      created: true,
+      version: 9n,
+    });
+    assert.deepEqual(await client.incr('counter', { delta: 11n, namespace: 'tenant-a' }), {
+      value: 11n,
+      version: 12n,
+    });
     assert.equal((await client.stats()).node_id, 'n1');
     await assert.rejects(client.get('failing'), (err) => err instanceof DittoError && err.code === 'RateLimited');
   } finally {

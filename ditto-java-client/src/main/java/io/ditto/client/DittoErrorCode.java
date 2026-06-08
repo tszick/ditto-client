@@ -12,7 +12,10 @@ public enum DittoErrorCode {
     RATE_LIMITED,
     CIRCUIT_OPEN,
     NAMESPACE_QUOTA_EXCEEDED,
-    AUTH_FAILED;
+    AUTH_FAILED,
+    UNSUPPORTED_REQUEST,
+    TYPE_MISMATCH,
+    OVERFLOW;
 
     private static final DittoErrorCode[] VALUES = values();
 

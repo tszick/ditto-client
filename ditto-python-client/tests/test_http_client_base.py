@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 from ditto_client import DittoError, DittoErrorCode
 from ditto_client.http_client_base import DittoHttpClientBase
@@ -35,20 +34,13 @@ class HttpClientBaseTests(unittest.TestCase):
         with client as same:
             self.assertIs(same, client)
 
-    def test_insecure_tls_option_warns(self):
-        with patch.dict("os.environ", {"DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV": "true"}):
-            with self.assertWarnsRegex(RuntimeWarning, "local development only"):
-                DittoHttpClientBase(tls=True, dev_insecure_tls=True)
+    def test_insecure_tls_option_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "no longer supported"):
+            DittoHttpClientBase(tls=True, dev_insecure_tls=True)
 
-    def test_insecure_tls_requires_dev_env(self):
-        with patch.dict("os.environ", {"DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV": ""}):
-            with self.assertRaisesRegex(ValueError, "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"):
-                DittoHttpClientBase(tls=True, dev_insecure_tls=True)
-
-    def test_reject_unauthorized_false_requires_dev_env(self):
-        with patch.dict("os.environ", {"DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV": ""}):
-            with self.assertRaisesRegex(ValueError, "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"):
-                DittoHttpClientBase(tls=True, reject_unauthorized=False)
+    def test_reject_unauthorized_false_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "no longer supported"):
+            DittoHttpClientBase(tls=True, reject_unauthorized=False)
 
 
 if __name__ == "__main__":

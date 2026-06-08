@@ -32,6 +32,21 @@ class DittoSetTtlByPatternResult:
 
 
 @dataclasses.dataclass(frozen=True)
+class DittoSetNxResult:
+    """Returned by set_nx(). ``created`` is False when the key already existed
+    (no write performed); ``version`` is the existing or newly-assigned version."""
+    created: bool
+    version: int
+
+
+@dataclasses.dataclass(frozen=True)
+class DittoCounterResult:
+    """Returned by incr(). ``value`` is the post-increment counter value."""
+    value: int
+    version: int
+
+
+@dataclasses.dataclass(frozen=True)
 class DittoWatchEvent:
     """Returned by wait_watch_event(). value is None when the key was deleted."""
     key: str
@@ -73,6 +88,9 @@ class DittoErrorCode(str, Enum):
     CIRCUIT_OPEN     = "CircuitOpen"
     NAMESPACE_QUOTA_EXCEEDED = "NamespaceQuotaExceeded"
     AUTH_FAILED      = "AuthFailed"
+    UNSUPPORTED_REQUEST = "UnsupportedRequest"
+    TYPE_MISMATCH    = "TypeMismatch"
+    OVERFLOW         = "Overflow"
 
 
 class DittoError(Exception):

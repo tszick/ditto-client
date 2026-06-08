@@ -13,7 +13,7 @@ import type { DittoErrorCode } from './types.js';
 interface DittoHttpRequestInit {
   method?: string;
   headers?: Record<string, string>;
-  body?: string;
+  body?: string | Buffer;
   signal?: AbortSignal;
 }
 
@@ -140,7 +140,7 @@ export class DittoHttpClientBase {
 
     const url = `${this.baseUrl}${path}`;
     const method = (init.method ?? 'GET').toUpperCase();
-    const body = this.normalizeRequestBody(init.body);
+    const body = this.normalizeRequestBody(init.body, headers['Content-Type']);
     const canRetry = this.retryEnabled && this.retryMethods.has(method);
     this.beforeRequest();
 
@@ -234,7 +234,7 @@ export class DittoHttpClientBase {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
   ): Promise<Response> {
     return new Promise<Response>((resolve, reject) => {
       const req = https.request(url, { method, headers, agent: this.agent }, (res) => {
@@ -273,12 +273,18 @@ export class DittoHttpClientBase {
     });
   }
 
-  private normalizeRequestBody(body: string | undefined): string | undefined {
+  private normalizeRequestBody(
+    body: string | Buffer | undefined,
+    contentType?: string,
+  ): string | Buffer | undefined {
     if (body === undefined) return undefined;
-    if (typeof body !== 'string') {
-      throw new Error('Unsupported HTTP request body type');
+    if (typeof body === 'string' || Buffer.isBuffer(body)) {
+      if (Buffer.isBuffer(body) && contentType !== 'application/octet-stream') {
+        throw new Error('Unsupported HTTP request body type');
+      }
+      return body;
     }
-    return body;
+    throw new Error('Unsupported HTTP request body type');
   }
 
   /** @internal */
@@ -301,11 +307,16 @@ export class DittoHttpClientBase {
     if (status === 503) return 'NodeInactive';
     if (status === 504) return 'WriteTimeout';
     if (status === 404) return 'KeyNotFound';
+    if (status === 501) return 'UnsupportedRequest';
     return 'InternalError';
   }
 
   /** @internal */
-  protected validateCoreInputs(op: 'get' | 'set' | 'delete', key: string, namespace?: string): void {
+  protected validateCoreInputs(
+    op: 'get' | 'set' | 'setNX' | 'incr' | 'delete',
+    key: string,
+    namespace?: string,
+  ): void {
     if (!this.strictMode) return;
     const keyTrimmed = key.trim();
     if (keyTrimmed.length === 0) {

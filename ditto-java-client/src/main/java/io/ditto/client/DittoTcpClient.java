@@ -195,6 +195,53 @@ public class DittoTcpClient implements Closeable {
         };
     }
 
+    /** Atomic create-if-absent with no TTL. */
+    public synchronized DittoSetNxResult setNx(String key, String value) throws IOException {
+        return setNx(key, value.getBytes(StandardCharsets.UTF_8), 0, null);
+    }
+
+    /** Atomic create-if-absent with optional TTL. */
+    public synchronized DittoSetNxResult setNx(String key, String value, long ttlSecs) throws IOException {
+        return setNx(key, value.getBytes(StandardCharsets.UTF_8), ttlSecs, null);
+    }
+
+    /** Atomic create-if-absent with optional TTL and namespace. */
+    public synchronized DittoSetNxResult setNx(String key, byte[] value, long ttlSecs, String namespace)
+            throws IOException {
+        validateCoreInputs("set", key, namespace);
+        Response resp = sendAndRead(encodeSetNx(key, value, ttlSecs, namespace));
+        return switch (resp.type) {
+            case SET_NX -> new DittoSetNxResult(resp.created, resp.version);
+            case ERROR  -> throw new DittoException(resp.errorCode, resp.message);
+            default     -> throw new IOException("Unexpected response: " + resp.type);
+        };
+    }
+
+    /** Atomic counter increment by 1, creating the key at 1 if absent. */
+    public synchronized DittoCounterResult incr(String key) throws IOException {
+        return incr(key, 1, 0, null);
+    }
+
+    /** Atomic counter increment by {@code delta}, creating the key at {@code delta} if absent. */
+    public synchronized DittoCounterResult incr(String key, long delta) throws IOException {
+        return incr(key, delta, 0, null);
+    }
+
+    /**
+     * Atomic counter increment. Creates the key at {@code delta} if absent
+     * (with {@code ttlSecsOnCreate}); never resets the TTL of an existing key.
+     */
+    public synchronized DittoCounterResult incr(String key, long delta, long ttlSecsOnCreate, String namespace)
+            throws IOException {
+        validateCoreInputs("set", key, namespace);
+        Response resp = sendAndRead(encodeIncr(key, delta, ttlSecsOnCreate, namespace));
+        return switch (resp.type) {
+            case COUNTER -> new DittoCounterResult(resp.counterValue, resp.version);
+            case ERROR   -> throw new DittoException(resp.errorCode, resp.message);
+            default      -> throw new IOException("Unexpected response: " + resp.type);
+        };
+    }
+
     /**
      * Delete a key. Returns {@code true} if the key existed, {@code false} if not found.
      */
@@ -306,6 +353,15 @@ public class DittoTcpClient implements Closeable {
 
     private byte[] encodeDelete(String key, String namespace) {
         return Wire.wrapClientRequest(Wire.REQ_DELETE, Wire.encodeKeyNamespace(key, namespace));
+    }
+
+    private byte[] encodeSetNx(String key, byte[] value, long ttlSecs, String namespace) {
+        // SET_NX reuses the SetRequest wire shape (proto: SetRequest set_nx = 10).
+        return Wire.wrapClientRequest(Wire.REQ_SET_NX, Wire.encodeSetRequest(key, value, ttlSecs, namespace));
+    }
+
+    private byte[] encodeIncr(String key, long delta, long ttlSecsOnCreate, String namespace) {
+        return Wire.wrapClientRequest(Wire.REQ_INCR, Wire.encodeIncrRequest(key, delta, ttlSecsOnCreate, namespace));
     }
 
     private byte[] encodePing() {
@@ -458,7 +514,7 @@ public class DittoTcpClient implements Closeable {
     // ── Response container ────────────────────────────────────────────────────
 
     enum ResponseType {
-        VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, WATCHING, UNWATCHED, WATCH_EVENT, PATTERN_DELETED, PATTERN_TTL_UPDATED
+        VALUE, OK, DELETED, NOT_FOUND, PONG, AUTH_OK, ERROR, WATCHING, UNWATCHED, WATCH_EVENT, PATTERN_DELETED, PATTERN_TTL_UPDATED, SET_NX, COUNTER
     }
 
     static final class Response {
@@ -470,6 +526,8 @@ public class DittoTcpClient implements Closeable {
         DittoErrorCode errorCode;
         String         message;
         long           count;
+        boolean        created;
+        long           counterValue;
     }
 
     // ── Protobuf wire format helper ──────────────────────────────────────────
@@ -497,6 +555,8 @@ public class DittoTcpClient implements Closeable {
         static final int REQ_UNWATCH             = 7;
         static final int REQ_DELETE_BY_PATTERN   = 8;
         static final int REQ_SET_TTL_BY_PATTERN  = 9;
+        static final int REQ_SET_NX              = 10;
+        static final int REQ_INCR                = 11;
 
         // ClientResponse oneof field numbers
         static final int RESP_VALUE                = 1;
@@ -511,6 +571,8 @@ public class DittoTcpClient implements Closeable {
         static final int RESP_WATCH_EVENT          = 10;
         static final int RESP_PATTERN_DELETED      = 11;
         static final int RESP_PATTERN_TTL_UPDATED  = 12;
+        static final int RESP_SET_NX               = 13;
+        static final int RESP_COUNTER              = 14;
 
         // Wire types
         static final int WT_VARINT = 0;
@@ -528,6 +590,14 @@ public class DittoTcpClient implements Closeable {
         static final int STBP_PATTERN  = 1;
         static final int STBP_TTL_SECS = 2;
         static final int STBP_NAMESPACE = 3;
+        static final int INCR_KEY                = 1;
+        static final int INCR_DELTA              = 2;
+        static final int INCR_TTL_SECS_ON_CREATE = 3;
+        static final int INCR_NAMESPACE          = 4;
+        static final int SNX_CREATED   = 1;
+        static final int SNX_VERSION   = 2;
+        static final int CTR_VALUE     = 1;
+        static final int CTR_VERSION   = 2;
         static final int AUTH_TOKEN    = 1;
         static final int VAL_KEY       = 1;
         static final int VAL_VALUE     = 2;
@@ -562,6 +632,21 @@ public class DittoTcpClient implements Closeable {
             void uint64Field(int field, long value) {
                 if (value == 0) return;
                 tag(field, WT_VARINT); varint(value);
+            }
+
+            /**
+             * Encode a proto {@code int64} field. Always emitted (even for 0, since
+             * INCR delta is explicit-presence and 0 is meaningful); negatives use a
+             * 10-byte two's-complement varint (NOT zigzag), via an unsigned shift.
+             */
+            void int64Field(int field, long value) {
+                tag(field, WT_VARINT);
+                long v = value;
+                while ((v & ~0x7FL) != 0) {
+                    buf.write((int) ((v & 0x7F) | 0x80));
+                    v >>>= 7;
+                }
+                buf.write((int) v);
             }
 
             void enumField(int field, int value) {
@@ -703,6 +788,21 @@ public class DittoTcpClient implements Closeable {
             return w.toByteArray();
         }
 
+        static byte[] encodeIncrRequest(String key, long delta, long ttlSecsOnCreate, String namespace) {
+            Writer w = new Writer();
+            w.stringField(INCR_KEY, key);
+            // Always emit delta so the server uses the caller's value verbatim
+            // rather than its absent-default of 1.
+            w.int64Field(INCR_DELTA, delta);
+            if (ttlSecsOnCreate > 0) {
+                w.ldField(INCR_TTL_SECS_ON_CREATE, encodeOptionalUint64(ttlSecsOnCreate));
+            }
+            if (hasNamespace(namespace)) {
+                w.ldField(INCR_NAMESPACE, encodeOptionalString(namespace));
+            }
+            return w.toByteArray();
+        }
+
         static byte[] encodeSetTtlByPatternRequest(String pattern, long ttlSecs, String namespace) {
             Writer w = new Writer();
             w.stringField(STBP_PATTERN, pattern);
@@ -786,6 +886,8 @@ public class DittoTcpClient implements Closeable {
                     case RESP_WATCH_EVENT -> { decodeWatchEvent(inner, out); out.type = ResponseType.WATCH_EVENT; return out; }
                     case RESP_PATTERN_DELETED -> {     out.count = decodeCount(inner); out.type = ResponseType.PATTERN_DELETED;     return out; }
                     case RESP_PATTERN_TTL_UPDATED -> { out.count = decodeCount(inner); out.type = ResponseType.PATTERN_TTL_UPDATED; return out; }
+                    case RESP_SET_NX -> { decodeSetNx(inner, out);   out.type = ResponseType.SET_NX;  return out; }
+                    case RESP_COUNTER -> { decodeCounter(inner, out); out.type = ResponseType.COUNTER; return out; }
                     default -> {} // unknown variant — keep scanning
                 }
             }
@@ -811,6 +913,30 @@ public class DittoTcpClient implements Closeable {
                 int[] t = r.readTag();
                 int field = t[0], wire = t[1];
                 if (field == VR_VERSION && wire == WT_VARINT) out.version = r.readVarint();
+                else r.skip(wire);
+            }
+        }
+
+        private static void decodeSetNx(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                if (field == SNX_CREATED && wire == WT_VARINT)      out.created = r.readVarint() != 0;
+                else if (field == SNX_VERSION && wire == WT_VARINT) out.version = r.readVarint();
+                else r.skip(wire);
+            }
+        }
+
+        private static void decodeCounter(byte[] buf, Response out) throws IOException {
+            Reader r = new Reader(buf);
+            while (r.remaining() > 0) {
+                int[] t = r.readTag();
+                int field = t[0], wire = t[1];
+                // proto int64 read as a Java long is already the correct signed value
+                // (a -1 arrives as a 10-byte two's-complement varint == 0xFFFF..FF).
+                if (field == CTR_VALUE && wire == WT_VARINT)        out.counterValue = r.readVarint();
+                else if (field == CTR_VERSION && wire == WT_VARINT) out.version = r.readVarint();
                 else r.skip(wire);
             }
         }

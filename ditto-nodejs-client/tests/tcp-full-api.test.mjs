@@ -7,6 +7,8 @@ import {
   REQUEST_FIELDS,
   RESPONSE_FIELDS,
   decodeClientRequestVariant,
+  encodeCounterResponseInner,
+  encodeSetNxResponseInner,
   frameClientResponse,
   encodeVersionResponseInner,
 } from '../dist/wire.js';
@@ -39,6 +41,8 @@ test('tcp client exercises auth get delete pattern and ttl commands', async () =
     REQUEST_FIELDS.DELETE,
     REQUEST_FIELDS.DELETE_BY_PATTERN,
     REQUEST_FIELDS.SET_TTL_BY_PATTERN,
+    REQUEST_FIELDS.SET_NX,
+    REQUEST_FIELDS.INCR,
   ];
   const responses = new Map([
     [REQUEST_FIELDS.AUTH, frameClientResponse(RESPONSE_FIELDS.AUTH_OK, Buffer.alloc(0))],
@@ -47,6 +51,8 @@ test('tcp client exercises auth get delete pattern and ttl commands', async () =
     [REQUEST_FIELDS.DELETE, frameClientResponse(RESPONSE_FIELDS.DELETED, Buffer.alloc(0))],
     [REQUEST_FIELDS.DELETE_BY_PATTERN, frameClientResponse(RESPONSE_FIELDS.PATTERN_DELETED, Buffer.alloc(0))],
     [REQUEST_FIELDS.SET_TTL_BY_PATTERN, frameClientResponse(RESPONSE_FIELDS.PATTERN_TTL_UPDATED, Buffer.alloc(0))],
+    [REQUEST_FIELDS.SET_NX, frameClientResponse(RESPONSE_FIELDS.SET_NX, encodeSetNxResponseInner(true, 9n))],
+    [REQUEST_FIELDS.INCR, frameClientResponse(RESPONSE_FIELDS.COUNTER, encodeCounterResponseInner(11n, 12n))],
   ]);
 
   const server = net.createServer(async (socket) => {
@@ -76,6 +82,14 @@ test('tcp client exercises auth get delete pattern and ttl commands', async () =
     assert.equal(await client.delete('ns-key', 'tenant-a'), true);
     assert.deepEqual(await client.deleteByPattern('tenant:*', 'tenant-a'), { deleted: 0 });
     assert.deepEqual(await client.setTtlByPattern('tenant:*', 45, 'tenant-a'), { updated: 0 });
+    assert.deepEqual(await client.setNX('lease-key', Buffer.from([1, 2, 3]), 30, 'tenant-a'), {
+      created: true,
+      version: 9n,
+    });
+    assert.deepEqual(await client.incr('counter', { delta: 11n, namespace: 'tenant-a' }), {
+      value: 11n,
+      version: 12n,
+    });
   } finally {
     await client.close();
     await new Promise((resolve) => server.close(resolve));

@@ -41,6 +41,27 @@ final class ProtoTestSupport {
         return w.toByteArray();
     }
 
+    static byte[] encodeErrorInner(int codeIdx, String message) {
+        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        w.uint64Field(DittoTcpClient.Wire.ERR_CODE, codeIdx);
+        w.stringField(DittoTcpClient.Wire.ERR_MESSAGE, message);
+        return w.toByteArray();
+    }
+
+    static byte[] encodeSetNxInner(boolean created, long version) {
+        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        w.uint64Field(DittoTcpClient.Wire.SNX_CREATED, created ? 1 : 0);
+        w.uint64Field(DittoTcpClient.Wire.SNX_VERSION, version);
+        return w.toByteArray();
+    }
+
+    static byte[] encodeCounterInner(long value, long version) {
+        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        w.int64Field(DittoTcpClient.Wire.CTR_VALUE, value);
+        w.uint64Field(DittoTcpClient.Wire.CTR_VERSION, version);
+        return w.toByteArray();
+    }
+
     static byte[] encodeWatchEventInner(String key, byte[] value, boolean hasValue, long version) {
         DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
         w.stringField(DittoTcpClient.Wire.WE_KEY, key);

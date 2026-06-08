@@ -80,6 +80,31 @@ func TestHTTPClientCoversNamespacePatternStatsAndErrors(t *testing.T) {
 			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/key/ns-key":
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/key/lease-key":
+			if got := r.Header.Get("X-Ditto-Namespace"); got != "tenant-a" {
+				t.Fatalf("unexpected setnx namespace header: %q", got)
+			}
+			if got := r.URL.Query().Get("nx"); got != "1" {
+				t.Fatalf("unexpected nx query: %q", got)
+			}
+			if got := r.URL.Query().Get("ttl"); got != "30" {
+				t.Fatalf("unexpected setnx ttl query: %q", got)
+			}
+			body, _ := io.ReadAll(r.Body)
+			if !bytes.Equal(body, []byte{1, 2, 3}) {
+				t.Fatalf("unexpected setnx body: %v", body)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"created": true, "version": "9"})
+		case r.Method == http.MethodPost && r.URL.Path == "/key/counter/incr":
+			if got := r.Header.Get("X-Ditto-Namespace"); got != "tenant-a" {
+				t.Fatalf("unexpected incr namespace header: %q", got)
+			}
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if payload["delta"].(float64) != 11 {
+				t.Fatalf("unexpected incr payload: %v", payload)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"value": "11", "version": "12"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/key/missing":
 			w.WriteHeader(http.StatusNotFound)
 		case r.Method == http.MethodPost && r.URL.Path == "/keys/delete-by-pattern":
@@ -141,6 +166,14 @@ func TestHTTPClientCoversNamespacePatternStatsAndErrors(t *testing.T) {
 	if deleted, err := client.Delete("ns-key"); err != nil || !deleted {
 		t.Fatalf("delete existing=%v err=%v", deleted, err)
 	}
+	setnx, err := client.SetNX("lease-key", []byte{1, 2, 3}, 30, "tenant-a")
+	if err != nil || !setnx.Created || setnx.Version != 9 {
+		t.Fatalf("setnx=%+v err=%v", setnx, err)
+	}
+	incr, err := client.Incr("counter", 11, 0, "tenant-a")
+	if err != nil || incr.Value != 11 || incr.Version != 12 {
+		t.Fatalf("incr=%+v err=%v", incr, err)
+	}
 	if deleted, err := client.Delete("missing"); err != nil || deleted {
 		t.Fatalf("delete missing=%v err=%v", deleted, err)
 	}
@@ -161,7 +194,7 @@ func TestHTTPClientCoversNamespacePatternStatsAndErrors(t *testing.T) {
 		t.Fatalf("expected payload HTTP error, got %v", err)
 	}
 
-	if len(seen) < 9 {
+	if len(seen) < 11 {
 		t.Fatalf("expected broad HTTP exercise, saw %v", seen)
 	}
 }

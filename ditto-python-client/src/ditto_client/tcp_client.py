@@ -19,16 +19,20 @@ from .wire import (
     encode_delete,
     encode_delete_by_pattern,
     encode_get,
+    encode_incr,
     encode_ping,
     encode_set,
+    encode_set_nx,
     encode_set_ttl_by_pattern,
     encode_unwatch,
     encode_watch,
 )
 from .types import (
+    DittoCounterResult,
     DittoDeleteByPatternResult,
     DittoError,
     DittoGetResult,
+    DittoSetNxResult,
     DittoSetResult,
     DittoSetTtlByPatternResult,
     DittoWatchEvent,
@@ -142,6 +146,45 @@ class DittoTcpClient:
         resp = self._send(encode_set(key, raw, ttl_secs, namespace))
         if resp.type == "Ok":
             return DittoSetResult(version=resp.version)  # type: ignore[union-attr]
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def set_nx(
+        self,
+        key: str,
+        value: str | bytes,
+        ttl_secs: int = 0,
+        namespace: str | None = None,
+    ) -> DittoSetNxResult:
+        """
+        Atomic create-if-absent. Returns ``created=False`` (with the existing
+        version) when the key already exists — no write is performed.
+        """
+        validate_core_inputs(self._strict_mode, "set", key, namespace)
+        raw = value.encode("utf-8") if isinstance(value, str) else value
+        resp = self._send(encode_set_nx(key, raw, ttl_secs, namespace))
+        if resp.type == "SetNx":
+            return DittoSetNxResult(created=resp.created, version=resp.version)  # type: ignore[union-attr]
+        if resp.type == "Error":
+            raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
+        raise RuntimeError(f"Unexpected response: {resp.type}")
+
+    def incr(
+        self,
+        key: str,
+        delta: int = 1,
+        ttl_secs_on_create: int = 0,
+        namespace: str | None = None,
+    ) -> DittoCounterResult:
+        """
+        Atomic counter increment. Creates the key at ``delta`` if absent
+        (with ``ttl_secs_on_create``); never resets the TTL of an existing key.
+        """
+        validate_core_inputs(self._strict_mode, "set", key, namespace)
+        resp = self._send(encode_incr(key, delta, ttl_secs_on_create, namespace))
+        if resp.type == "Counter":
+            return DittoCounterResult(value=resp.value, version=resp.version)  # type: ignore[union-attr]
         if resp.type == "Error":
             raise DittoError(resp.code, str(resp))  # type: ignore[union-attr]
         raise RuntimeError(f"Unexpected response: {resp.type}")

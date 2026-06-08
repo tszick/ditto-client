@@ -6,10 +6,13 @@
  */
 
 import { DittoHttpClientBase } from './http-client-base.js';
+import { DittoError } from './types.js';
 import type {
+  DittoCounterResult,
   DittoDeleteByPatternResult,
   DittoGetResult,
   DittoSetResult,
+  DittoSetNxResult,
   DittoSetTtlByPatternResult,
   DittoStatsResult,
 } from './types.js';
@@ -62,6 +65,58 @@ export class DittoHttpClient extends DittoHttpClientBase {
     await this.assertOk(resp);
     const body = await resp.json() as { version: number };
     return { version: body.version };
+  }
+
+  async setNX(
+    key: string,
+    value: string | Buffer,
+    ttlSecs: number,
+    namespace?: string,
+  ): Promise<DittoSetNxResult> {
+    this.validateCoreInputs('setNX', key, namespace);
+    const url = `/key/${encodeURIComponent(key)}?nx=1${ttlSecs > 0 ? `&ttl=${ttlSecs}` : ''}`;
+    const resp = await this.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        ...(this.namespaceHeaders(namespace) ?? {}),
+      },
+      body: typeof value === 'string' ? Buffer.from(value, 'utf8') : value,
+    });
+    if ([400, 404, 501].includes(resp.status)) {
+      throw await unsupportedAtomicHttpError(resp, 'SET_NX');
+    }
+    await this.assertOk(resp);
+    const body = await resp.json() as { created: boolean; version: string };
+    return { created: body.created, version: BigInt(body.version) };
+  }
+
+  async incr(
+    key: string,
+    opts?: { delta?: bigint | number; ttlSecsOnCreate?: number; namespace?: string },
+  ): Promise<DittoCounterResult> {
+    this.validateCoreInputs('incr', key, opts?.namespace);
+    const payload: { delta?: string; ttl_secs_on_create?: number } = {};
+    if (opts?.delta !== undefined) {
+      payload.delta = opts.delta.toString();
+    }
+    if (opts?.ttlSecsOnCreate !== undefined && opts.ttlSecsOnCreate > 0) {
+      payload.ttl_secs_on_create = opts.ttlSecsOnCreate;
+    }
+    const resp = await this.request(`/key/${encodeURIComponent(key)}/incr`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.namespaceHeaders(opts?.namespace) ?? {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if ([400, 404, 501].includes(resp.status)) {
+      throw await unsupportedAtomicHttpError(resp, 'INCR');
+    }
+    await this.assertOk(resp);
+    const body = await resp.json() as { value: string; version: string };
+    return { value: BigInt(body.value), version: BigInt(body.version) };
   }
 
   /** Delete a key. Returns true if the key existed, false if not found. */
@@ -122,4 +177,22 @@ export class DittoHttpClient extends DittoHttpClientBase {
     return resp.json() as Promise<DittoStatsResult>;
   }
 
+}
+
+async function unsupportedAtomicHttpError(
+  resp: Response,
+  operation: 'SET_NX' | 'INCR',
+): Promise<Error> {
+  try {
+    const body = await resp.json() as { error?: string; message?: string };
+    if (body.error === 'UnsupportedRequest') {
+      return new DittoError('UnsupportedRequest', body.message ?? 'UnsupportedRequest');
+    }
+  } catch {
+    // fall through to normalized message below
+  }
+  return new DittoError(
+    'UnsupportedRequest',
+    `UnsupportedRequest: server does not support ${operation}. Upgrade dittod to a version with atomic primitives.`,
+  );
 }

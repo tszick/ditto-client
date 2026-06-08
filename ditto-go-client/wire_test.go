@@ -13,6 +13,9 @@ func TestDecodeResponseErrorCodeMappingIncludesRateLimitAndCircuitOpen(t *testin
 		{idx: 8, want: ErrCircuitOpen},
 		{idx: 9, want: ErrNamespaceQuotaExceeded},
 		{idx: 10, want: ErrAuthFailed},
+		{idx: 11, want: ErrUnsupportedRequest},
+		{idx: 12, want: ErrTypeMismatch},
+		{idx: 13, want: ErrOverflow},
 	}
 
 	for _, tc := range tests {

@@ -30,6 +30,8 @@ import {
   encodeAuth,
   encodeGet,
   encodeSet,
+  encodeSetNX,
+  encodeIncr,
   encodeDelete,
   encodeDeleteByPattern,
   encodePing,
@@ -41,9 +43,11 @@ import {
 } from './wire.js';
 import { DittoError } from './types.js';
 import type {
+  DittoCounterResult,
   DittoDeleteByPatternResult,
   DittoGetResult,
   DittoSetResult,
+  DittoSetNxResult,
   DittoSetTtlByPatternResult,
 } from './types.js';
 
@@ -219,6 +223,41 @@ export class DittoTcpClient {
     if (resp.type === 'Ok')    return { version: resp.version };
     if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
     throw new Error(`Unexpected response: ${resp.type}`);
+  }
+
+  async setNX(
+    key: string,
+    value: string | Buffer,
+    ttlSecs: number,
+    namespace?: string,
+  ): Promise<DittoSetNxResult> {
+    this.validateCoreInputs('setNX', key, namespace);
+    const valueBuf = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
+    try {
+      const resp = await this.send(encodeSetNX(key, valueBuf, ttlSecs, namespace));
+      if (resp.type === 'SetNx') return { created: resp.created, version: resp.version };
+      if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
+      throw new Error(`Unexpected response: ${resp.type}`);
+    } catch (error) {
+      throw normalizeAtomicUnsupportedError(error, 'SET_NX');
+    }
+  }
+
+  async incr(
+    key: string,
+    opts?: { delta?: bigint | number; ttlSecsOnCreate?: number; namespace?: string },
+  ): Promise<DittoCounterResult> {
+    this.validateCoreInputs('incr', key, opts?.namespace);
+    try {
+      const resp = await this.send(
+        encodeIncr(key, opts?.delta, opts?.ttlSecsOnCreate, opts?.namespace),
+      );
+      if (resp.type === 'Counter') return { value: resp.value, version: resp.version };
+      if (resp.type === 'Error') throw new DittoError(resp.code, resp.message);
+      throw new Error(`Unexpected response: ${resp.type}`);
+    } catch (error) {
+      throw normalizeAtomicUnsupportedError(error, 'INCR');
+    }
   }
 
   /**
@@ -540,7 +579,11 @@ export class DittoTcpClient {
     for (const w of queue) w.reject(err);
   }
 
-  private validateCoreInputs(op: 'get' | 'set' | 'delete' | 'watch' | 'unwatch', key: string, namespace?: string): void {
+  private validateCoreInputs(
+    op: 'get' | 'set' | 'setNX' | 'incr' | 'delete' | 'watch' | 'unwatch',
+    key: string,
+    namespace?: string,
+  ): void {
     if (!this.strictMode) return;
     const keyTrimmed = key.trim();
     if (keyTrimmed.length === 0) {
@@ -603,4 +646,28 @@ function normalizeNamespace(namespace?: string): string | undefined {
 
 function watchCallbackKey(key: string, namespace?: string): string {
   return namespace ? `${namespace}::${key}` : key;
+}
+
+function normalizeAtomicUnsupportedError(error: unknown, operation: 'SET_NX' | 'INCR'): Error {
+  if (error instanceof DittoError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes('unsupported')
+    || normalized.includes('protocol')
+    || normalized.includes('decode')
+    || normalized.includes('missing client_response')
+    || normalized.includes('oneof has no active field')
+    || normalized.includes('socket hang up')
+    || normalized.includes('econnreset')
+    || normalized.includes('unexpected eof')
+  ) {
+    return new DittoError(
+      'UnsupportedRequest',
+      `Server does not support ${operation}. Upgrade dittod to a version with atomic primitives.`,
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
 }

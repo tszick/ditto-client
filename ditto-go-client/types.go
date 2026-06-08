@@ -9,6 +9,16 @@ type SetResult struct {
 	Version uint64
 }
 
+type SetNXResult struct {
+	Created bool
+	Version uint64
+}
+
+type IncrResult struct {
+	Value   int64
+	Version uint64
+}
+
 type DeleteByPatternResult struct {
 	Deleted uint64 `json:"deleted"`
 }

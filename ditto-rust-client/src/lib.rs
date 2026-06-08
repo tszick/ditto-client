@@ -11,6 +11,6 @@ pub use errors::{DittoError, Result};
 pub use http_client::{DittoHttpClient, HttpClientOptions};
 pub use tcp_client::{DittoTcpClient, TcpClientOptions};
 pub use types::{
-    DeleteByPatternResult, GetResult, SetResult, SetTtlByPatternResult, StatsResult,
-    WatchEventResult,
+    CounterResult, DeleteByPatternResult, GetResult, SetNxResult, SetResult, SetTtlByPatternResult,
+    StatsResult, WatchEventResult,
 };

@@ -126,7 +126,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both HTTP and TCP clients.
 - TCP watch APIs are available: `watch(key)`, `wait_watch_event()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `auto_reconnect=True`.
-- HTTP TLS secure default is enabled when `tls=True`; `dev_insecure_tls=True` is local-development only, requires `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true`, and emits a warning.
+- HTTP TLS secure default is enabled when `tls=True`; `dev_insecure_tls=True` and `reject_unauthorized=False` are insecure and are no longer supported.
 
 ## Go notes
 
@@ -134,7 +134,7 @@ For long-lived idle watch connections:
 - Namespace-aware helpers are available for both protocols.
 - Strict mode is available via `StrictMode: true` in client options.
 - HTTP TLS verification is secure-by-default when `TLS: true`.
-- Dev-only insecure mode is explicit via `DevInsecureTLS: true` (legacy `InsecureSkipVerify: true` remains supported), requires `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true`, and emits a warning.
+- `DevInsecureTLS: true` and legacy `InsecureSkipVerify: true` are insecure and are ignored; keep certificate verification enabled and trust the certificate properly instead.
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
 
@@ -144,7 +144,7 @@ For long-lived idle watch connections:
 - Namespace-aware helpers are available for both protocols via optional namespace arguments.
 - Strict mode is available via `strict_mode: true` in client options.
 - HTTP TLS verification is secure-by-default when `tls: true`.
-- Dev-only insecure mode is explicit via `dev_insecure_tls: true`, requires `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true`, and emits a warning.
+- `dev_insecure_tls: true` is insecure and is no longer supported; keep certificate verification enabled and trust the certificate properly instead.
 
 ## Production transport policy
 
@@ -208,8 +208,8 @@ SDK defaults must remain production-safe:
 
 - HTTPS certificate verification enabled by default.
 - Node.js and Java must not expose insecure TLS bypasses.
-- Go, Python, and Rust dev-only insecure TLS bypasses require
-  `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true` and must not be used in production.
+- Python and Rust must not expose insecure TLS bypasses.
+- Go legacy insecure TLS bypass flags must be ignored so certificate verification stays enabled.
 - Strict client-side validation should be enabled in production integrations
   unless an application has a documented key-format incompatibility.
 - Raw TCP usage must be limited to loopback, private trusted networks, or an

@@ -33,6 +33,16 @@ func countResponseInner(count uint64) []byte {
 	return appendUint64Field(nil, countField, count)
 }
 
+func setNXResponseInner(created bool, version uint64) []byte {
+	buf := appendUint64Field(nil, snxCreated, map[bool]uint64{false: 0, true: 1}[created])
+	return appendUint64Field(buf, snxVersion, version)
+}
+
+func counterResponseInner(value int64, version uint64) []byte {
+	buf := appendInt64Field(nil, counterValue, value)
+	return appendUint64Field(buf, counterVersion, version)
+}
+
 func TestTCPClientFullCommandSurface(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -47,8 +57,10 @@ func TestTCPClientFullCommandSurface(t *testing.T) {
 		reqDelete:           frameClientResponse(rspDeleted, nil),
 		reqDeleteByPattern:  frameClientResponse(rspPatternDeleted, countResponseInner(3)),
 		reqSetTTLByPattern:  frameClientResponse(rspPatternTTLUpdated, countResponseInner(4)),
+		reqSetNX:            frameClientResponse(rspSetNX, setNXResponseInner(true, 9)),
+		reqIncr:             frameClientResponse(rspCounter, counterResponseInner(11, 12)),
 	}
-	want := []int{reqAuth, reqSet, reqGet, reqDelete, reqDeleteByPattern, reqSetTTLByPattern}
+	want := []int{reqAuth, reqSet, reqGet, reqDelete, reqDeleteByPattern, reqSetTTLByPattern, reqSetNX, reqIncr}
 	done := make(chan error, 1)
 	go func() {
 		conn, err := ln.Accept()
@@ -108,6 +120,14 @@ func TestTCPClientFullCommandSurface(t *testing.T) {
 	ttl, err := client.SetTtlByPattern("tenant:*", 45, "tenant-a")
 	if err != nil || ttl.Updated != 4 {
 		t.Fatalf("ttl pattern=%+v err=%v", ttl, err)
+	}
+	setNx, err := client.SetNX("lease-key", []byte{1, 2, 3}, 30, "tenant-a")
+	if err != nil || !setNx.Created || setNx.Version != 9 {
+		t.Fatalf("setnx=%+v err=%v", setNx, err)
+	}
+	counter, err := client.Incr("counter", 11, 0, "tenant-a")
+	if err != nil || counter.Value != 11 || counter.Version != 12 {
+		t.Fatalf("incr=%+v err=%v", counter, err)
 	}
 
 	if err := <-done; err != nil {

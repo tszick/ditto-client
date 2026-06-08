@@ -11,6 +11,21 @@ pub struct SetResult {
     pub version: u64,
 }
 
+/// Result of an atomic `SET_NX`. `created` is false when the key already
+/// existed (no write performed); `version` is the existing or new version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetNxResult {
+    pub created: bool,
+    pub version: u64,
+}
+
+/// Result of an atomic `INCR`. `value` is the post-increment counter value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CounterResult {
+    pub value: i64,
+    pub version: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub struct DeleteByPatternResult {
     pub deleted: u64,

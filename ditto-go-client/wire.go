@@ -39,6 +39,8 @@ const (
 	respWatchEvent
 	respPatternDeleted
 	respPatternTTLUpdated
+	respSetNX
+	respCounter
 )
 
 type tcpResponse struct {
@@ -50,6 +52,8 @@ type tcpResponse struct {
 	code     string
 	message  string
 	count    uint64
+	created  bool
+	counter  int64
 }
 
 // Envelope field numbers
@@ -70,6 +74,8 @@ const (
 	reqUnwatch          = 7
 	reqDeleteByPattern  = 8
 	reqSetTTLByPattern  = 9
+	reqSetNX            = 10
+	reqIncr             = 11
 )
 
 // ClientResponse oneof field numbers
@@ -86,6 +92,8 @@ const (
 	rspWatchEvent         = 10
 	rspPatternDeleted     = 11
 	rspPatternTTLUpdated  = 12
+	rspSetNX              = 13
+	rspCounter            = 14
 )
 
 // Wire types
@@ -107,11 +115,19 @@ const (
 	stbpPattern   = 1
 	stbpTTLSecs   = 2
 	stbpNamespace = 3
+	incrKey       = 1
+	incrDelta     = 2
+	incrTTLSecsOnCreate = 3
+	incrNamespace = 4
 	authToken     = 1
 	valKey        = 1
 	valValue      = 2
 	valVersion    = 3
 	vrVersion     = 1
+	snxCreated    = 1
+	snxVersion    = 2
+	counterValue  = 1
+	counterVersion = 2
 	errCodeField  = 1
 	errMessage    = 2
 	weKey         = 1
@@ -189,6 +205,11 @@ func appendEnumField(buf []byte, field int, value int) []byte {
 	return appendVarint(buf, uint64(value))
 }
 
+func appendInt64Field(buf []byte, field int, value int64) []byte {
+	buf = appendTag(buf, field, wtVarint)
+	return appendVarint(buf, uint64(value))
+}
+
 // ---------------------------------------------------------------------------
 // Inner message encoders
 // ---------------------------------------------------------------------------
@@ -240,6 +261,20 @@ func encodeSetTTLByPatternRequest(pattern string, ttlSecs *uint64, namespace *st
 	}
 	if hasNamespace(namespace) {
 		buf = appendLDField(buf, stbpNamespace, encodeOptionalString(*namespace))
+	}
+	return buf
+}
+
+func encodeIncrRequest(key string, delta *int64, ttlSecsOnCreate *uint64, namespace *string) []byte {
+	buf := appendStringField(nil, incrKey, key)
+	if delta != nil {
+		buf = appendInt64Field(buf, incrDelta, *delta)
+	}
+	if ttlSecsOnCreate != nil && *ttlSecsOnCreate > 0 {
+		buf = appendLDField(buf, incrTTLSecsOnCreate, encodeOptionalUint64(*ttlSecsOnCreate))
+	}
+	if hasNamespace(namespace) {
+		buf = appendLDField(buf, incrNamespace, encodeOptionalString(*namespace))
 	}
 	return buf
 }
@@ -300,6 +335,14 @@ func encodeDeleteByPattern(pattern string, namespace *string) []byte {
 
 func encodeSetTTLByPattern(pattern string, ttlSecs *uint64, namespace *string) []byte {
 	return wrapClientRequest(reqSetTTLByPattern, encodeSetTTLByPatternRequest(pattern, ttlSecs, namespace))
+}
+
+func encodeSetNX(key string, value []byte, ttlSecs *uint64, namespace *string) []byte {
+	return wrapClientRequest(reqSetNX, encodeSetRequest(key, value, ttlSecs, namespace))
+}
+
+func encodeIncr(key string, delta *int64, ttlSecsOnCreate *uint64, namespace *string) []byte {
+	return wrapClientRequest(reqIncr, encodeIncrRequest(key, delta, ttlSecsOnCreate, namespace))
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +509,10 @@ func decodeResponse(payload []byte) (*tcpResponse, error) {
 				return nil, err
 			}
 			return &tcpResponse{kind: respPatternTTLUpdated, count: c}, nil
+		case rspSetNX:
+			return decodeSetNXResponse(inner)
+		case rspCounter:
+			return decodeCounterResponse(inner)
 		}
 	}
 	return nil, fmt.Errorf("ClientResponse oneof has no active field")
@@ -570,12 +617,75 @@ func decodeErrorResponse(buf []byte) (*tcpResponse, error) {
 		ErrCircuitOpen,
 		ErrNamespaceQuotaExceeded,
 		ErrAuthFailed,
+		ErrUnsupportedRequest,
+		ErrTypeMismatch,
+		ErrOverflow,
 	}
 	code := ErrInternalError
 	if codeIdx < uint64(len(codes)) {
 		code = codes[codeIdx]
 	}
 	return &tcpResponse{kind: respError, code: code, message: message}, nil
+}
+
+func decodeSetNXResponse(buf []byte) (*tcpResponse, error) {
+	r := &reader{buf: buf}
+	out := &tcpResponse{kind: respSetNX}
+	for r.remaining() > 0 {
+		field, wire, err := r.readTag()
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case field == snxCreated && wire == wtVarint:
+			v, err := r.readVarint()
+			if err != nil {
+				return nil, err
+			}
+			out.created = v != 0
+		case field == snxVersion && wire == wtVarint:
+			v, err := r.readVarint()
+			if err != nil {
+				return nil, err
+			}
+			out.version = v
+		default:
+			if err := r.skip(wire); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+func decodeCounterResponse(buf []byte) (*tcpResponse, error) {
+	r := &reader{buf: buf}
+	out := &tcpResponse{kind: respCounter}
+	for r.remaining() > 0 {
+		field, wire, err := r.readTag()
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case field == counterValue && wire == wtVarint:
+			v, err := r.readVarint()
+			if err != nil {
+				return nil, err
+			}
+			out.counter = int64(v)
+		case field == counterVersion && wire == wtVarint:
+			v, err := r.readVarint()
+			if err != nil {
+				return nil, err
+			}
+			out.version = v
+		default:
+			if err := r.skip(wire); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
 }
 
 func decodeWatchEvent(buf []byte) (*tcpResponse, error) {

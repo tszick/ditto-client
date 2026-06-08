@@ -11,7 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -71,21 +71,10 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 		}).DialContext,
 	}
 	if opts.TLS {
-		insecureSkipVerify := opts.InsecureSkipVerify
-		if opts.DevInsecureTLS {
-			insecureSkipVerify = true
-		} else if opts.RejectUnauthorized {
-			insecureSkipVerify = false
+		if opts.InsecureSkipVerify || opts.DevInsecureTLS {
+			log.Print("WARNING: insecure TLS bypass flags are no longer supported and will be ignored; use a trusted certificate configuration instead")
 		}
-		if insecureSkipVerify {
-			if !allowDevInsecureTLS() {
-				log.Print("WARNING: insecure TLS certificate verification was requested but ignored; set DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true for local/self-signed development only")
-				insecureSkipVerify = false
-			} else {
-				log.Print("WARNING: insecure TLS certificate verification is enabled for local development only; do not use InsecureSkipVerify or DevInsecureTLS in production")
-			}
-		}
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecureSkipVerify} //nolint:gosec
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: false}
 	}
 	c := &HTTPClient{
 		baseURL: fmt.Sprintf("%s://%s:%d", scheme, host, port),
@@ -99,11 +88,6 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 		c.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(opts.Username+":"+opts.Password))
 	}
 	return c
-}
-
-func allowDevInsecureTLS() bool {
-	value := strings.TrimSpace(os.Getenv("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"))
-	return strings.EqualFold(value, "true") || value == "1"
 }
 
 func (c *HTTPClient) Close() {}
@@ -281,6 +265,87 @@ func (c *HTTPClient) SetStringInNamespace(key, value, namespace string, ttlSecs 
 	return c.SetInNamespace(key, []byte(value), namespace, ttlSecs...)
 }
 
+func (c *HTTPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace ...string) (*SetNXResult, error) {
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
+		return nil, err
+	}
+	path := "/key/" + url.PathEscape(key) + "?nx=1"
+	if ttlSecs > 0 {
+		path += fmt.Sprintf("&ttl=%d", ttlSecs)
+	}
+	b, status, err := c.request(http.MethodPost, path, value, "application/octet-stream", namespaceHeaderPtr(ns))
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusNotImplemented {
+		if err := parseAtomicHTTPUnsupported(status, b, "SET_NX"); err != nil {
+			return nil, err
+		}
+	}
+	if err := parseHTTPError(status, b); err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Created bool   `json:"created"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil, err
+	}
+	version, err := strconv.ParseUint(payload.Version, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &SetNXResult{Created: payload.Created, Version: version}, nil
+}
+
+func (c *HTTPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, namespace ...string) (*IncrResult, error) {
+	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
+		return nil, err
+	}
+	payload := map[string]any{"delta": delta}
+	if ttlSecsOnCreate > 0 {
+		payload["ttl_secs_on_create"] = ttlSecsOnCreate
+	}
+	body, _ := json.Marshal(payload)
+	b, status, err := c.request(http.MethodPost, "/key/"+url.PathEscape(key)+"/incr", body, "application/json", namespaceHeaderPtr(ns))
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusNotImplemented {
+		if err := parseAtomicHTTPUnsupported(status, b, "INCR"); err != nil {
+			return nil, err
+		}
+	}
+	if err := parseHTTPError(status, b); err != nil {
+		return nil, err
+	}
+	var response struct {
+		Value   string `json:"value"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(b, &response); err != nil {
+		return nil, err
+	}
+	value, err := strconv.ParseInt(response.Value, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	version, err := strconv.ParseUint(response.Version, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &IncrResult{Value: value, Version: version}, nil
+}
+
 func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
 	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
 	if err != nil {
@@ -390,4 +455,22 @@ func namespaceHeaderPtr(namespace *string) map[string]string {
 		return nil
 	}
 	return map[string]string{"X-Ditto-Namespace": ns}
+}
+
+func parseAtomicHTTPUnsupported(status int, body []byte, operation string) error {
+	var payload struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &payload) == nil && payload.Error == ErrUnsupportedRequest {
+		msg := payload.Message
+		if msg == "" {
+			msg = payload.Error
+		}
+		return &DittoError{Code: ErrUnsupportedRequest, Message: msg}
+	}
+	return &DittoError{
+		Code:    ErrUnsupportedRequest,
+		Message: fmt.Sprintf("server does not support %s; upgrade dittod to a version with atomic primitives", operation),
+	}
 }

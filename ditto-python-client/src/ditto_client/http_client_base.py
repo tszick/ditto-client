@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
-import warnings
 from typing import Any
 
 from .types import DittoError, DittoErrorCode
@@ -51,20 +49,16 @@ class DittoHttpClientBase:
 
         if tls:
             ctx = ssl.create_default_context()
-            if dev_insecure_tls or not reject_unauthorized:
-                if not _allow_dev_insecure_tls():
-                    raise ValueError(
-                        "insecure TLS verification requires "
-                        "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true for local/self-signed development"
-                    )
-                warnings.warn(
-                    "insecure TLS certificate verification is enabled for local development only; "
-                    "do not use dev_insecure_tls=True or reject_unauthorized=False in production",
-                    RuntimeWarning,
-                    stacklevel=2,
+            if dev_insecure_tls:
+                raise ValueError(
+                    "dev_insecure_tls=True is insecure and is no longer supported. "
+                    "Use a trusted certificate configuration instead."
                 )
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
+            if not reject_unauthorized:
+                raise ValueError(
+                    "reject_unauthorized=False is insecure and is no longer supported. "
+                    "Use a trusted certificate configuration instead."
+                )
             self._ssl_ctx = ctx
 
     # ------------------------------------------------------------------
@@ -155,8 +149,3 @@ class DittoHttpClientBase:
     def _url_encode(s: str) -> str:
         """Percent-encode a key for use in a URL path segment."""
         return urllib.parse.quote(s, safe="")
-
-
-def _allow_dev_insecure_tls() -> bool:
-    value = os.environ.get("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV", "").strip().lower()
-    return value in {"1", "true"}

@@ -14,6 +14,9 @@ const (
 	ErrCircuitOpen     = "CircuitOpen"
 	ErrNamespaceQuotaExceeded = "NamespaceQuotaExceeded"
 	ErrAuthFailed      = "AuthFailed"
+	ErrUnsupportedRequest = "UnsupportedRequest"
+	ErrTypeMismatch   = "TypeMismatch"
+	ErrOverflow       = "Overflow"
 )
 
 type DittoError struct {

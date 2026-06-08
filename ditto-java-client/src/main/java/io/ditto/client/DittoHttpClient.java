@@ -82,6 +82,102 @@ public class DittoHttpClient extends DittoHttpClientBase {
         return new DittoSetResult(version);
     }
 
+    /** Atomic create-if-absent with no TTL. */
+    public DittoSetNxResult setNx(String key, String value) throws IOException, InterruptedException {
+        return setNx(key, value.getBytes(StandardCharsets.UTF_8), 0, null);
+    }
+
+    /** Atomic create-if-absent with optional TTL. */
+    public DittoSetNxResult setNx(String key, String value, long ttlSecs) throws IOException, InterruptedException {
+        return setNx(key, value.getBytes(StandardCharsets.UTF_8), ttlSecs, null);
+    }
+
+    /**
+     * Atomic create-if-absent. {@code created} is false (with the existing
+     * version) when the key already exists — no write is performed.
+     */
+    public DittoSetNxResult setNx(String key, byte[] value, long ttlSecs, String namespace)
+            throws IOException, InterruptedException {
+        validateCoreInputs("set", key, namespace);
+        String path = "/key/" + urlEncode(key) + "?nx=1" + (ttlSecs > 0 ? "&ttl=" + ttlSecs : "");
+        HttpRequest req = requestBuilder(path, namespace)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(value))
+                .header("Content-Type", "application/octet-stream")
+                .build();
+        HttpResponse<String> resp = send(req);
+        throwIfAtomicUnsupported(resp, "SET_NX");
+        assertOk(resp);
+        Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
+        boolean created = Boolean.TRUE.equals(body.get("created"));
+        long version = Long.parseLong(String.valueOf(body.get("version")));
+        return new DittoSetNxResult(created, version);
+    }
+
+    /** Atomic counter increment by 1, creating the key at 1 if absent. */
+    public DittoCounterResult incr(String key) throws IOException, InterruptedException {
+        return incr(key, 1, 0, null);
+    }
+
+    /** Atomic counter increment by {@code delta}, creating the key at {@code delta} if absent. */
+    public DittoCounterResult incr(String key, long delta) throws IOException, InterruptedException {
+        return incr(key, delta, 0, null);
+    }
+
+    /**
+     * Atomic counter increment. Creates the key at {@code delta} if absent
+     * (with {@code ttlSecsOnCreate}); never resets the TTL of an existing key.
+     */
+    public DittoCounterResult incr(String key, long delta, long ttlSecsOnCreate, String namespace)
+            throws IOException, InterruptedException {
+        validateCoreInputs("set", key, namespace);
+        // Send delta as a JSON string so the int64 survives any consumer that
+        // would coerce a large number to a float (server accepts string or number).
+        String body = ttlSecsOnCreate > 0
+                ? mapper.writeValueAsString(Map.of("delta", String.valueOf(delta), "ttl_secs_on_create", ttlSecsOnCreate))
+                : mapper.writeValueAsString(Map.of("delta", String.valueOf(delta)));
+        HttpRequest req = requestBuilder("/key/" + urlEncode(key) + "/incr", namespace)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> resp = send(req);
+        throwIfAtomicUnsupported(resp, "INCR");
+        assertOk(resp);
+        Map<?, ?> payload = mapper.readValue(resp.body(), Map.class);
+        long value = Long.parseLong(String.valueOf(payload.get("value")));
+        long version = Long.parseLong(String.valueOf(payload.get("version")));
+        return new DittoCounterResult(value, version);
+    }
+
+    /**
+     * An OLD dittod without atomic-primitive routes answers SET_NX/INCR with
+     * 400 (rejects the request shape), 404 (route missing) or 501 (explicitly
+     * unsupported). Normalize all three to {@code UNSUPPORTED_REQUEST}.
+     * TypeMismatch/Overflow are 409 and flow through {@link #assertOk}.
+     */
+    private void throwIfAtomicUnsupported(HttpResponse<String> resp, String operation) {
+        int status = resp.statusCode();
+        if (status != 400 && status != 404 && status != 501) return;
+        try {
+            Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
+            if ("UnsupportedRequest".equals(body.get("error"))) {
+                Object msg = body.get("message");
+                throw new DittoException(
+                        DittoErrorCode.UNSUPPORTED_REQUEST,
+                        msg != null ? msg.toString() : "UnsupportedRequest",
+                        "UnsupportedRequest");
+            }
+        } catch (DittoException e) {
+            throw e;
+        } catch (Exception ignored) {
+            // non-JSON body — fall through to the normalized message
+        }
+        throw new DittoException(
+                DittoErrorCode.UNSUPPORTED_REQUEST,
+                "UnsupportedRequest: server does not support " + operation
+                        + ". Upgrade dittod to a version with atomic primitives.",
+                "UnsupportedRequest");
+    }
+
     /** Delete a key. Returns true if the key existed, false if not found. */
     public boolean delete(String key) throws IOException, InterruptedException {
         return delete(key, null);

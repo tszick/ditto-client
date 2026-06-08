@@ -7,7 +7,8 @@ use tokio::time::timeout;
 
 use crate::errors::{DittoError, Result};
 use crate::types::{
-    DeleteByPatternResult, GetResult, SetResult, SetTtlByPatternResult, WatchEventResult,
+    CounterResult, DeleteByPatternResult, GetResult, SetNxResult, SetResult, SetTtlByPatternResult,
+    WatchEventResult,
 };
 use crate::validation::{normalized_namespace, validate_core_inputs, validate_pattern_inputs};
 use crate::wire::{self, ClientResponse};
@@ -140,6 +141,55 @@ impl DittoTcpClient {
     ) -> Result<SetResult> {
         self.set(key, value.as_bytes().to_vec(), ttl_secs, namespace)
             .await
+    }
+
+    /// Atomic create-if-absent. Returns `created=false` (with the existing
+    /// version) when the key already exists — no write is performed.
+    pub async fn set_nx(
+        &self,
+        key: &str,
+        value: impl Into<Vec<u8>>,
+        ttl_secs: Option<u64>,
+        namespace: Option<&str>,
+    ) -> Result<SetNxResult> {
+        let value = value.into();
+        let namespace = normalized_namespace(self.options.strict_mode, namespace)?;
+        validate_core_inputs(self.options.strict_mode, "set", key, namespace.as_deref())?;
+        let ttl = ttl_secs.filter(|ttl| *ttl > 0);
+        let response = self
+            .send_request(wire::encode_set_nx(key, &value, ttl, namespace.as_deref()))
+            .await?;
+        match response {
+            ClientResponse::SetNx { created, version } => Ok(SetNxResult { created, version }),
+            ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
+            _ => Err(DittoError::Protocol("unexpected set_nx response".into())),
+        }
+    }
+
+    /// Atomic counter increment. Creates the key at `delta` if absent
+    /// (with `ttl_secs_on_create`); never resets the TTL of an existing key.
+    pub async fn incr(
+        &self,
+        key: &str,
+        delta: i64,
+        ttl_secs_on_create: Option<u64>,
+        namespace: Option<&str>,
+    ) -> Result<CounterResult> {
+        let namespace = normalized_namespace(self.options.strict_mode, namespace)?;
+        validate_core_inputs(self.options.strict_mode, "set", key, namespace.as_deref())?;
+        let response = self
+            .send_request(wire::encode_incr(
+                key,
+                delta,
+                ttl_secs_on_create.filter(|ttl| *ttl > 0),
+                namespace.as_deref(),
+            ))
+            .await?;
+        match response {
+            ClientResponse::Counter { value, version } => Ok(CounterResult { value, version }),
+            ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
+            _ => Err(DittoError::Protocol("unexpected incr response".into())),
+        }
     }
 
     pub async fn delete(&self, key: &str, namespace: Option<&str>) -> Result<bool> {
@@ -422,6 +472,68 @@ mod tests {
             }
         );
         client.unwatch("k", None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tcp_atomic_primitives_map_responses() {
+        let port = spawn_scripted_server(vec![vec![
+            test_support::frame_set_nx(true, 1),
+            test_support::frame_set_nx(false, 1),
+            test_support::frame_counter(5, 2),
+            test_support::frame_counter(-3, 3),
+        ]])
+        .await;
+        let client = test_client(port, false, None);
+
+        assert_eq!(
+            client
+                .set_nx("k", b"v".to_vec(), Some(60), None)
+                .await
+                .unwrap(),
+            crate::types::SetNxResult {
+                created: true,
+                version: 1
+            }
+        );
+        assert_eq!(
+            client
+                .set_nx("k", b"v2".to_vec(), None, None)
+                .await
+                .unwrap(),
+            crate::types::SetNxResult {
+                created: false,
+                version: 1
+            }
+        );
+        assert_eq!(
+            client.incr("c", 5, Some(30), None).await.unwrap(),
+            crate::types::CounterResult {
+                value: 5,
+                version: 2
+            }
+        );
+        assert_eq!(
+            client.incr("c", -8, None, None).await.unwrap(),
+            crate::types::CounterResult {
+                value: -3,
+                version: 3
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_incr_type_mismatch_maps_to_ditto_error() {
+        let port = spawn_scripted_server(vec![vec![test_support::frame_error(
+            12,
+            "Stored value is not a valid int64 counter",
+        )]])
+        .await;
+        let client = test_client(port, false, None);
+
+        match client.incr("c", 1, None, None).await.unwrap_err() {
+            DittoError::Server { code, .. } => assert_eq!(code, "TypeMismatch"),
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[tokio::test]

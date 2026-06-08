@@ -9,6 +9,18 @@ export interface DittoSetResult {
   version: number;
 }
 
+/** Value returned by setNX(). */
+export interface DittoSetNxResult {
+  created: boolean;
+  version: bigint;
+}
+
+/** Value returned by incr(). */
+export interface DittoCounterResult {
+  value: bigint;
+  version: bigint;
+}
+
 /** Value returned by deleteByPattern(). */
 export interface DittoDeleteByPatternResult {
   deleted: number;
@@ -64,7 +76,10 @@ export type DittoErrorCode =
   | 'RateLimited'
   | 'CircuitOpen'
   | 'NamespaceQuotaExceeded'
-  | 'AuthFailed';
+  | 'AuthFailed'
+  | 'UnsupportedRequest'
+  | 'TypeMismatch'
+  | 'Overflow';
 
 /** Error thrown when the server returns an error response. */
 export class DittoError extends Error {

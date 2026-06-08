@@ -37,6 +37,8 @@ _REQ_WATCH              = 6
 _REQ_UNWATCH            = 7
 _REQ_DELETE_BY_PATTERN  = 8
 _REQ_SET_TTL_BY_PATTERN = 9
+_REQ_SET_NX             = 10
+_REQ_INCR               = 11
 
 # --- ClientResponse oneof field numbers -------------------------------------
 _RESP_VALUE               = 1
@@ -51,6 +53,8 @@ _RESP_UNWATCHED           = 9
 _RESP_WATCH_EVENT         = 10
 _RESP_PATTERN_DELETED     = 11
 _RESP_PATTERN_TTL_UPDATED = 12
+_RESP_SET_NX              = 13
+_RESP_COUNTER             = 14
 
 # Wire types
 _WT_VARINT = 0
@@ -68,6 +72,14 @@ _SR_NAMESPACE  = 4
 _STBP_PATTERN  = 1
 _STBP_TTL_SECS = 2
 _STBP_NAMESPACE = 3
+_INCR_KEY                = 1
+_INCR_DELTA              = 2
+_INCR_TTL_SECS_ON_CREATE = 3
+_INCR_NAMESPACE          = 4
+_SNX_CREATED   = 1
+_SNX_VERSION   = 2
+_CTR_VALUE     = 1
+_CTR_VERSION   = 2
 _AUTH_TOKEN    = 1
 _VAL_KEY       = 1
 _VAL_VALUE     = 2
@@ -93,6 +105,9 @@ _ERROR_CODE_NAMES = [
     DittoErrorCode.CIRCUIT_OPEN,
     DittoErrorCode.NAMESPACE_QUOTA_EXCEEDED,
     DittoErrorCode.AUTH_FAILED,
+    DittoErrorCode.UNSUPPORTED_REQUEST,
+    DittoErrorCode.TYPE_MISMATCH,
+    DittoErrorCode.OVERFLOW,
 ]
 
 
@@ -146,6 +161,13 @@ def _uint64_field(field: int, value: int) -> bytes:
     return _encode_tag(field, _WT_VARINT) + _encode_varint(value)
 
 
+def _int64_field(field: int, value: int) -> bytes:
+    """Encode a proto ``int64`` field. Always emitted (even for 0, since INCR
+    delta is explicit-presence and 0 is meaningful); negatives use a 10-byte
+    two's-complement varint, NOT zigzag."""
+    return _encode_tag(field, _WT_VARINT) + _encode_varint(value & 0xFFFFFFFFFFFFFFFF)
+
+
 def _enum_field(field: int, value: int) -> bytes:
     if value == 0:
         return b""
@@ -192,6 +214,18 @@ def _encode_set_request(key: str, value: bytes, ttl_secs: int, namespace: str | 
     return b"".join(parts)
 
 
+def _encode_incr_request(key: str, delta: int, ttl_secs_on_create: int, namespace: str | None) -> bytes:
+    parts = [
+        _string_field(_INCR_KEY, key),
+        _int64_field(_INCR_DELTA, delta),
+    ]
+    if ttl_secs_on_create > 0:
+        parts.append(_ld_field(_INCR_TTL_SECS_ON_CREATE, _encode_optional_uint64(ttl_secs_on_create)))
+    if _has_namespace(namespace):
+        parts.append(_ld_field(_INCR_NAMESPACE, _encode_optional_string(namespace)))
+    return b"".join(parts)
+
+
 def _encode_set_ttl_by_pattern_request(pattern: str, ttl_secs: int, namespace: str | None) -> bytes:
     parts = [_string_field(_STBP_PATTERN, pattern)]
     if ttl_secs > 0:
@@ -229,6 +263,15 @@ def encode_set(key: str, value: bytes, ttl_secs: int = 0, namespace: str | None 
 
 def encode_delete(key: str, namespace: str | None = None) -> bytes:
     return _wrap_client_request(_REQ_DELETE, _encode_key_namespace(key, namespace))
+
+
+def encode_set_nx(key: str, value: bytes, ttl_secs: int = 0, namespace: str | None = None) -> bytes:
+    # SET_NX reuses the SetRequest wire shape (proto: SetRequest set_nx = 10).
+    return _wrap_client_request(_REQ_SET_NX, _encode_set_request(key, value, ttl_secs, namespace))
+
+
+def encode_incr(key: str, delta: int = 1, ttl_secs_on_create: int = 0, namespace: str | None = None) -> bytes:
+    return _wrap_client_request(_REQ_INCR, _encode_incr_request(key, delta, ttl_secs_on_create, namespace))
 
 
 def encode_ping() -> bytes:
@@ -286,6 +329,12 @@ class _Reader:
             if shift > 70:
                 raise ValueError("varint too long")
         raise ValueError("truncated varint")
+
+    def read_int64(self) -> int:
+        """Read a proto ``int64`` varint, reinterpreting the two's-complement
+        bit pattern as a signed 64-bit integer."""
+        v = self.read_varint()
+        return v - (1 << 64) if v >= (1 << 63) else v
 
     def read_tag(self) -> tuple[int, int]:
         t = self.read_varint()
@@ -355,7 +404,22 @@ class _PatternTtlUpdated(NamedTuple):
     updated: int
 
 
-ClientResponse = _Value | _Ok | _Simple | _Error | _WatchEvent | _PatternDeleted | _PatternTtlUpdated
+class _SetNx(NamedTuple):
+    type: str
+    created: bool
+    version: int
+
+
+class _Counter(NamedTuple):
+    type: str
+    value: int
+    version: int
+
+
+ClientResponse = (
+    _Value | _Ok | _Simple | _Error | _WatchEvent
+    | _PatternDeleted | _PatternTtlUpdated | _SetNx | _Counter
+)
 
 
 def decode_response(buf: bytes) -> ClientResponse:
@@ -396,6 +460,8 @@ def decode_response(buf: bytes) -> ClientResponse:
         if field == _RESP_WATCH_EVENT:         return _decode_watch_event(inner)
         if field == _RESP_PATTERN_DELETED:     return _PatternDeleted("PatternDeleted", _decode_count(inner))
         if field == _RESP_PATTERN_TTL_UPDATED: return _PatternTtlUpdated("PatternTtlUpdated", _decode_count(inner))
+        if field == _RESP_SET_NX:              return _decode_set_nx_response(inner)
+        if field == _RESP_COUNTER:             return _decode_counter_response(inner)
     raise ValueError("ClientResponse oneof has no active field")
 
 
@@ -479,6 +545,36 @@ def _decode_optional_bytes(buf: bytes) -> bytes:
     return out
 
 
+def _decode_set_nx_response(buf: bytes) -> _SetNx:
+    r = _Reader(buf)
+    created = False
+    version = 0
+    while r.remaining() > 0:
+        field, wire = r.read_tag()
+        if field == _SNX_CREATED and wire == _WT_VARINT:
+            created = r.read_varint() != 0
+        elif field == _SNX_VERSION and wire == _WT_VARINT:
+            version = r.read_varint()
+        else:
+            r.skip(wire)
+    return _SetNx("SetNx", created, version)
+
+
+def _decode_counter_response(buf: bytes) -> _Counter:
+    r = _Reader(buf)
+    value = 0
+    version = 0
+    while r.remaining() > 0:
+        field, wire = r.read_tag()
+        if field == _CTR_VALUE and wire == _WT_VARINT:
+            value = r.read_int64()
+        elif field == _CTR_VERSION and wire == _WT_VARINT:
+            version = r.read_varint()
+        else:
+            r.skip(wire)
+    return _Counter("Counter", value, version)
+
+
 def _decode_count(buf: bytes) -> int:
     r = _Reader(buf)
     count = 0
@@ -500,6 +596,8 @@ REQUEST_FIELDS = {
     "AUTH": _REQ_AUTH, "WATCH": _REQ_WATCH, "UNWATCH": _REQ_UNWATCH,
     "DELETE_BY_PATTERN": _REQ_DELETE_BY_PATTERN,
     "SET_TTL_BY_PATTERN": _REQ_SET_TTL_BY_PATTERN,
+    "SET_NX": _REQ_SET_NX,
+    "INCR": _REQ_INCR,
 }
 
 RESPONSE_FIELDS = {
@@ -508,6 +606,7 @@ RESPONSE_FIELDS = {
     "ERROR": _RESP_ERROR, "WATCHING": _RESP_WATCHING, "UNWATCHED": _RESP_UNWATCHED,
     "WATCH_EVENT": _RESP_WATCH_EVENT, "PATTERN_DELETED": _RESP_PATTERN_DELETED,
     "PATTERN_TTL_UPDATED": _RESP_PATTERN_TTL_UPDATED,
+    "SET_NX": _RESP_SET_NX, "COUNTER": _RESP_COUNTER,
 }
 
 
@@ -527,6 +626,14 @@ def encode_error_response_inner(code_idx: int, message: str) -> bytes:
 
 def encode_version_response_inner(version: int) -> bytes:
     return _uint64_field(_VR_VERSION, version)
+
+
+def encode_set_nx_response_inner(created: bool, version: int) -> bytes:
+    return _uint64_field(_SNX_CREATED, 1 if created else 0) + _uint64_field(_SNX_VERSION, version)
+
+
+def encode_counter_response_inner(value: int, version: int) -> bytes:
+    return _int64_field(_CTR_VALUE, value) + _uint64_field(_CTR_VERSION, version)
 
 
 def encode_watch_event_inner(key: str, value: bytes | None, version: int) -> bytes:

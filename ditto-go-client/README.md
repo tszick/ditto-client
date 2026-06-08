@@ -25,9 +25,9 @@ _, _ = client.SetString("k", "v", 60)
 ## TLS behavior (HTTP client)
 
 - TLS certificate verification is enabled by default when `TLS: true`.
-- To opt into insecure/self-signed acceptance for local dev only, set `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true` and `InsecureSkipVerify: true` or `DevInsecureTLS: true`.
-- `RejectUnauthorized: true` forces certificate verification.
-- Insecure TLS opt-ins are ignored unless the dev env gate is set.
+- `InsecureSkipVerify: true` and `DevInsecureTLS: true` are insecure and are now ignored.
+- Use a trusted certificate configuration instead of disabling verification.
+- `RejectUnauthorized` remains for backward compatibility; certificate verification stays enabled.
 
 ## Watch + reconnect example
 
