@@ -1,0 +1,104 @@
+version: 2
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/ditto-go-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(go)"
+    groups:
+      go-client-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "gradle"
+    directory: "/ditto-java-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:10"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(java)"
+    groups:
+      java-client-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/ditto-nodejs-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:20"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(node)"
+    groups:
+      node-client-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/ditto-python-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(py)"
+    groups:
+      python-client-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/ditto-rust-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:40"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(rust)"
+    groups:
+      rust-client-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:50"
+      timezone: "Europe/Budapest"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
