@@ -10,6 +10,7 @@ scripts/__pycache__/
 scripts/*.pyc
 ditto-rust-client/target/
 .gocache/
+.gocache-build/
 .npm-cache/
 
 # Local-only review/security notes and generated reports
