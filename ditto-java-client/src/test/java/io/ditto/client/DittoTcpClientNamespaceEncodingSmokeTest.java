@@ -4,12 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 /**
- * Smoke test: confirms that {@code encodeGet} produces a protobuf-encoded
+ * Smoke test: confirms that {@code DittoTcpRequestFactory.encodeGet} produces a protobuf-encoded
  * Envelope whose ClientRequest.get → KeyNamespace.namespace field is
  * present (Some) when a namespace is supplied and absent (None) otherwise.
  */
@@ -17,12 +16,8 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
 
     @Test
     void encodeGetWritesNamespaceAsOptionalStringWhenSet() throws Exception {
-        DittoTcpClient client = new DittoTcpClient();
-
-        Method encodeGet = DittoTcpClient.class.getDeclaredMethod("encodeGet", String.class, String.class);
-        encodeGet.setAccessible(true);
-
-        byte[] frame = (byte[]) encodeGet.invoke(client, "k", "tenant-a");
+        DittoTcpRequestFactory requestFactory = new DittoTcpRequestFactory();
+        byte[] frame = requestFactory.encodeGet("k", "tenant-a");
         ParsedRequest req = parseRequestFrame(frame);
 
         assertEquals(DittoTcpClient.Wire.REQ_GET, req.variantField);
@@ -36,12 +31,8 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
 
     @Test
     void encodeGetOmitsNamespaceWhenNull() throws Exception {
-        DittoTcpClient client = new DittoTcpClient();
-
-        Method encodeGet = DittoTcpClient.class.getDeclaredMethod("encodeGet", String.class, String.class);
-        encodeGet.setAccessible(true);
-
-        byte[] frame = (byte[]) encodeGet.invoke(client, "k", null);
+        DittoTcpRequestFactory requestFactory = new DittoTcpRequestFactory();
+        byte[] frame = requestFactory.encodeGet("k", null);
         ParsedRequest req = parseRequestFrame(frame);
 
         assertEquals(DittoTcpClient.Wire.REQ_GET, req.variantField);
@@ -78,7 +69,7 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
         byte[] envelope = new byte[length];
         System.arraycopy(frame, 4, envelope, 0, length);
 
-        DittoTcpClient.Wire.Reader env = new DittoTcpClient.Wire.Reader(envelope);
+        DittoTcpWireReader env = new DittoTcpWireReader(envelope);
         byte[] requestBytes = null;
         while (env.remaining() > 0) {
             int[] t = env.readTag();
@@ -91,7 +82,7 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
         }
         assertTrue(requestBytes != null, "envelope had a client_request payload");
 
-        DittoTcpClient.Wire.Reader r = new DittoTcpClient.Wire.Reader(requestBytes);
+        DittoTcpWireReader r = new DittoTcpWireReader(requestBytes);
         while (r.remaining() > 0) {
             int[] t = r.readTag();
             int field = t[0], wire = t[1];
@@ -105,7 +96,7 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
     }
 
     private static InnerKeyNamespace parseKeyNamespace(byte[] buf) throws Exception {
-        DittoTcpClient.Wire.Reader r = new DittoTcpClient.Wire.Reader(buf);
+        DittoTcpWireReader r = new DittoTcpWireReader(buf);
         InnerKeyNamespace out = new InnerKeyNamespace();
         out.key = new byte[0];
         while (r.remaining() > 0) {
@@ -125,7 +116,7 @@ class DittoTcpClientNamespaceEncodingSmokeTest {
     }
 
     private static byte[] parseOptionalString(byte[] buf) throws Exception {
-        DittoTcpClient.Wire.Reader r = new DittoTcpClient.Wire.Reader(buf);
+        DittoTcpWireReader r = new DittoTcpWireReader(buf);
         byte[] out = new byte[0];
         while (r.remaining() > 0) {
             int[] t = r.readTag();

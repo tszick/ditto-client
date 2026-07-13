@@ -146,13 +146,13 @@ class DittoTcpClientFullApiSmokeTest {
     }
 
     private static byte[] count(long count) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.uint64Field(DittoTcpClient.Wire.COUNT_FIELD, count);
         return w.toByteArray();
     }
 
     private static byte[] value(String key, String value, long version) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.stringField(DittoTcpClient.Wire.VAL_KEY, key);
         w.bytesField(DittoTcpClient.Wire.VAL_VALUE, value.getBytes(StandardCharsets.UTF_8));
         w.uint64Field(DittoTcpClient.Wire.VAL_VERSION, version);
@@ -160,7 +160,7 @@ class DittoTcpClientFullApiSmokeTest {
     }
 
     private static byte[] error(int code, String message) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.enumField(DittoTcpClient.Wire.ERR_CODE, code);
         w.stringField(DittoTcpClient.Wire.ERR_MESSAGE, message);
         return w.toByteArray();

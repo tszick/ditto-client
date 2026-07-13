@@ -14,6 +14,11 @@ Files:
 - `*.contract.json`: contract suites (versioned JSON specs),
 - `validate_contracts.py`: structural validator run in CI.
 
+Current suites:
+- `core-ops.contract.json`: shared runtime HTTP behavior smoke contract.
+- `strict-validation.contract.json`: shared strict validation and namespace normalization contract.
+- `atomic-errors.contract.json`: shared atomic unsupported-request normalization rules.
+
 Validation:
 
 ```bash

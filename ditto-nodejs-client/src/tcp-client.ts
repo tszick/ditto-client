@@ -44,6 +44,13 @@ import {
   type ClientResponse,
 } from './wire.js';
 import { DittoError } from './types.js';
+import {
+  normalizeAtomicUnsupportedError,
+  normalizeNamespace,
+  validateCoreInputs as validateSharedCoreInputs,
+  validatePatternInputs as validateSharedPatternInputs,
+  watchCallbackKey,
+} from './client-internal.js';
 import type {
   DittoCounterResult,
   DittoDeleteByPatternResult,
@@ -610,68 +617,12 @@ export class DittoTcpClient {
     key: string,
     namespace?: string,
   ): void {
-    if (!this.strictMode) return;
-    const keyTrimmed = key.trim();
-    if (keyTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: key must not be empty.`);
-    }
-    if (!STRICT_TOKEN_RE.test(key)) {
-      throw new Error(
-        `Invalid ${op} request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
-    if (namespace === undefined) return;
-    const nsTrimmed = namespace.trim();
-    if (nsTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
-    }
-    if (nsTrimmed.includes('::')) {
-      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
-    }
-    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
+    validateSharedCoreInputs(this.strictMode, op, key, namespace);
   }
 
   private validatePatternInputs(op: 'deleteByPattern' | 'setTtlByPattern', pattern: string, namespace?: string): void {
-    if (!this.strictMode) return;
-    const patternTrimmed = pattern.trim();
-    if (patternTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: pattern must not be empty.`);
-    }
-    if (!STRICT_PATTERN_RE.test(patternTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]`,
-      );
-    }
-    if (namespace === undefined) return;
-    const nsTrimmed = namespace.trim();
-    if (nsTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
-    }
-    if (nsTrimmed.includes('::')) {
-      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
-    }
-    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
+    validateSharedPatternInputs(this.strictMode, op, pattern, namespace);
   }
-}
-
-const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
-const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
-
-function normalizeNamespace(namespace?: string): string | undefined {
-  const trimmed = namespace?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
-}
-
-function watchCallbackKey(key: string, namespace?: string): string {
-  return namespace ? `${namespace}::${key}` : key;
 }
 
 function resolveTlsCaCert(input?: string): string | Buffer | undefined {
@@ -681,28 +632,4 @@ function resolveTlsCaCert(input?: string): string | Buffer | undefined {
     return trimmed;
   }
   return readFileSync(trimmed);
-}
-
-function normalizeAtomicUnsupportedError(error: unknown, operation: 'SET_NX' | 'INCR'): Error {
-  if (error instanceof DittoError) {
-    return error;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  if (
-    normalized.includes('unsupported')
-    || normalized.includes('protocol')
-    || normalized.includes('decode')
-    || normalized.includes('missing client_response')
-    || normalized.includes('oneof has no active field')
-    || normalized.includes('socket hang up')
-    || normalized.includes('econnreset')
-    || normalized.includes('unexpected eof')
-  ) {
-    return new DittoError(
-      'UnsupportedRequest',
-      `Server does not support ${operation}. Upgrade dittod to a version with atomic primitives.`,
-    );
-  }
-  return error instanceof Error ? error : new Error(message);
 }

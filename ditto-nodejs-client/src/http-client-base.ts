@@ -10,6 +10,11 @@ import * as https from 'node:https';
 import { readFileSync } from 'node:fs';
 import { DittoError } from './types.js';
 import type { DittoErrorCode } from './types.js';
+import {
+  normalizeNamespace,
+  validateCoreInputs as validateSharedCoreInputs,
+  validatePatternInputs as validateSharedPatternInputs,
+} from './client-internal.js';
 
 interface DittoHttpRequestInit {
   method?: string;
@@ -316,66 +321,36 @@ export class DittoHttpClientBase {
   }
 
   /** @internal */
+  protected namespaceHeaders(namespace?: string): Record<string, string> | undefined {
+    const normalizedNamespace = normalizeNamespace(namespace);
+    return normalizedNamespace ? { 'X-Ditto-Namespace': normalizedNamespace } : undefined;
+  }
+
+  /** @internal */
+  protected contentTypeHeaders(
+    contentType: 'application/json' | 'application/octet-stream' | 'text/plain',
+    namespace?: string,
+  ): Record<string, string> {
+    return {
+      'Content-Type': contentType,
+      ...(this.namespaceHeaders(namespace) ?? {}),
+    };
+  }
+
+  /** @internal */
   protected validateCoreInputs(
     op: 'get' | 'set' | 'setNX' | 'incr' | 'delete',
     key: string,
     namespace?: string,
   ): void {
-    if (!this.strictMode) return;
-    const keyTrimmed = key.trim();
-    if (keyTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: key must not be empty.`);
-    }
-    if (!STRICT_TOKEN_RE.test(key)) {
-      throw new Error(
-        `Invalid ${op} request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
-    if (namespace === undefined) return;
-    const nsTrimmed = namespace.trim();
-    if (nsTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
-    }
-    if (nsTrimmed.includes('::')) {
-      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
-    }
-    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
+    validateSharedCoreInputs(this.strictMode, op, key, namespace);
   }
 
   /** @internal */
   protected validatePatternInputs(op: 'deleteByPattern' | 'setTtlByPattern', pattern: string, namespace?: string): void {
-    if (!this.strictMode) return;
-    const patternTrimmed = pattern.trim();
-    if (patternTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: pattern must not be empty.`);
-    }
-    if (!STRICT_PATTERN_RE.test(patternTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]`,
-      );
-    }
-    if (namespace === undefined) return;
-    const nsTrimmed = namespace.trim();
-    if (nsTrimmed.length === 0) {
-      throw new Error(`Invalid ${op} request: namespace must not be blank when provided.`);
-    }
-    if (nsTrimmed.includes('::')) {
-      throw new Error(`Invalid ${op} request: namespace must not contain '::'.`);
-    }
-    if (!STRICT_TOKEN_RE.test(nsTrimmed)) {
-      throw new Error(
-        `Invalid ${op} request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]`,
-      );
-    }
+    validateSharedPatternInputs(this.strictMode, op, pattern, namespace);
   }
 }
-
-const STRICT_TOKEN_RE = /^[A-Za-z0-9._:-]+$/;
-const STRICT_PATTERN_RE = /^[A-Za-z0-9._:\-*]+$/;
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

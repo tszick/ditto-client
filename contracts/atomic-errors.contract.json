@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "suite": "atomic-errors",
+  "description": "Cross-SDK normalization rules for atomic primitive unsupported-request handling.",
+  "cases": [
+    {
+      "id": "http-json-unsupported-preserves-message",
+      "operation": "normalize_http_atomic_error",
+      "inputs": {
+        "transport": "http",
+        "status": 501,
+        "operation_name": "INCR",
+        "body": "{\"error\":\"UnsupportedRequest\",\"message\":\"no\"}"
+      },
+      "expect": {
+        "code": "UnsupportedRequest",
+        "message_contains": "no"
+      }
+    },
+    {
+      "id": "http-fallback-normalizes-generic-body",
+      "operation": "normalize_http_atomic_error",
+      "inputs": {
+        "transport": "http",
+        "status": 404,
+        "operation_name": "SET_NX",
+        "body": "missing route"
+      },
+      "expect": {
+        "code": "UnsupportedRequest",
+        "message_contains": "server does not support SET_NX"
+      }
+    },
+    {
+      "id": "tcp-unexpected-response-normalizes-to-unsupported",
+      "operation": "normalize_tcp_atomic_error",
+      "inputs": {
+        "transport": "tcp",
+        "operation_name": "INCR",
+        "error_message": "Unexpected response: OK",
+        "error_kind": "generic"
+      },
+      "expect": {
+        "code": "UnsupportedRequest",
+        "message_contains": "server does not support INCR"
+      }
+    },
+    {
+      "id": "tcp-ditto-error-passes-through",
+      "operation": "normalize_tcp_atomic_error",
+      "inputs": {
+        "transport": "tcp",
+        "operation_name": "SET_NX",
+        "error_message": "boom",
+        "error_kind": "ditto",
+        "error_code": "TypeMismatch"
+      },
+      "expect": {
+        "code": "TypeMismatch",
+        "message_contains": "boom"
+      }
+    }
+  ]
+}

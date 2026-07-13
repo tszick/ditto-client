@@ -17,11 +17,11 @@ final class ProtoTestSupport {
 
     /** Wrap an inner ClientResponse oneof variant in Envelope + 4-byte BE length frame. */
     static byte[] frameClientResponse(int variantField, byte[] inner) {
-        DittoTcpClient.Wire.Writer respWriter = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter respWriter = new DittoTcpWireWriter();
         respWriter.ldFieldAlways(variantField, inner);
         byte[] responseBytes = respWriter.toByteArray();
 
-        DittoTcpClient.Wire.Writer envWriter = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter envWriter = new DittoTcpWireWriter();
         envWriter.enumField(DittoTcpClient.Wire.ENV_VERSION, DittoTcpClient.Wire.PROTOCOL_VERSION);
         envWriter.ldFieldAlways(DittoTcpClient.Wire.ENV_CLIENT_RESPONSE, responseBytes);
         byte[] envelope = envWriter.toByteArray();
@@ -36,37 +36,37 @@ final class ProtoTestSupport {
     }
 
     static byte[] encodeVersionResponseInner(long version) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.uint64Field(DittoTcpClient.Wire.VR_VERSION, version);
         return w.toByteArray();
     }
 
     static byte[] encodeErrorInner(int codeIdx, String message) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.uint64Field(DittoTcpClient.Wire.ERR_CODE, codeIdx);
         w.stringField(DittoTcpClient.Wire.ERR_MESSAGE, message);
         return w.toByteArray();
     }
 
     static byte[] encodeSetNxInner(boolean created, long version) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.uint64Field(DittoTcpClient.Wire.SNX_CREATED, created ? 1 : 0);
         w.uint64Field(DittoTcpClient.Wire.SNX_VERSION, version);
         return w.toByteArray();
     }
 
     static byte[] encodeCounterInner(long value, long version) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.int64Field(DittoTcpClient.Wire.CTR_VALUE, value);
         w.uint64Field(DittoTcpClient.Wire.CTR_VERSION, version);
         return w.toByteArray();
     }
 
     static byte[] encodeWatchEventInner(String key, byte[] value, boolean hasValue, long version) {
-        DittoTcpClient.Wire.Writer w = new DittoTcpClient.Wire.Writer();
+        DittoTcpWireWriter w = new DittoTcpWireWriter();
         w.stringField(DittoTcpClient.Wire.WE_KEY, key);
         if (hasValue) {
-            DittoTcpClient.Wire.Writer optBytes = new DittoTcpClient.Wire.Writer();
+            DittoTcpWireWriter optBytes = new DittoTcpWireWriter();
             optBytes.bytesField(DittoTcpClient.Wire.OPT_VALUE, value);
             w.ldFieldAlways(DittoTcpClient.Wire.WE_VALUE, optBytes.toByteArray());
         }
@@ -77,7 +77,7 @@ final class ProtoTestSupport {
     /** Parse an Envelope payload (no length prefix) and return the active
      *  ClientRequest oneof field number. */
     static int readClientRequestVariant(byte[] payload) throws IOException {
-        DittoTcpClient.Wire.Reader env = new DittoTcpClient.Wire.Reader(payload);
+        DittoTcpWireReader env = new DittoTcpWireReader(payload);
         byte[] requestBytes = null;
         while (env.remaining() > 0) {
             int[] t = env.readTag();
@@ -90,7 +90,7 @@ final class ProtoTestSupport {
         }
         if (requestBytes == null) throw new IOException("Envelope is missing client_request payload");
 
-        DittoTcpClient.Wire.Reader r = new DittoTcpClient.Wire.Reader(requestBytes);
+        DittoTcpWireReader r = new DittoTcpWireReader(requestBytes);
         while (r.remaining() > 0) {
             int[] t = r.readTag();
             int field = t[0], wire = t[1];

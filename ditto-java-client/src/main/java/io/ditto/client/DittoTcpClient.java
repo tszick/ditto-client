@@ -1,21 +1,8 @@
 package io.ditto.client;
 
 import java.io.*;
-import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.GeneralSecurityException;
-import java.security.KeyStore;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManagerFactory;
 
 /**
  * DittoTcpClient – connects directly to dittod TCP port 7777.
@@ -55,6 +42,9 @@ public class DittoTcpClient implements Closeable {
     private final boolean tlsEnabled;
     private final String tlsCaCert;
     private final String tlsServerName;
+    private final DittoTcpSocketFactory socketFactory;
+    private final DittoTcpRequestFactory requestFactory;
+    private final DittoTcpResponseReader responseReader;
 
     private Socket           socket;
     private DataInputStream  in;
@@ -138,8 +128,11 @@ public class DittoTcpClient implements Closeable {
         this.connectTimeoutMs = connectTimeoutMs > 0 ? connectTimeoutMs : DEFAULT_CONNECT_TIMEOUT_MS;
         this.readTimeoutMs = readTimeoutMs > 0 ? readTimeoutMs : DEFAULT_READ_TIMEOUT_MS;
         this.tlsEnabled = tlsEnabled;
-        this.tlsCaCert = normalizeOptionalText(tlsCaCert);
-        this.tlsServerName = normalizeOptionalText(tlsServerName);
+        this.tlsCaCert = DittoClientValidators.normalizeOptionalText(tlsCaCert);
+        this.tlsServerName = DittoClientValidators.normalizeOptionalText(tlsServerName);
+        this.socketFactory = new DittoTcpSocketFactory();
+        this.requestFactory = new DittoTcpRequestFactory();
+        this.responseReader = new DittoTcpResponseReader(DEFAULT_MAX_FRAME_BYTES);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -154,7 +147,7 @@ public class DittoTcpClient implements Closeable {
         out = new BufferedOutputStream(socket.getOutputStream());
 
         if (authToken != null) {
-            sendFrame(encodeAuth(authToken));
+            sendFrame(requestFactory.encodeAuth(authToken));
             Response resp = readResponse();
             if (resp.type == ResponseType.ERROR) {
                 close();
@@ -177,7 +170,7 @@ public class DittoTcpClient implements Closeable {
 
     /** Send a Ping and return {@code true} when Pong is received. */
     public synchronized boolean ping() throws IOException {
-        return sendAndRead(encodePing()).type == ResponseType.PONG;
+        return sendAndRead(requestFactory.encodePing()).type == ResponseType.PONG;
     }
 
     /**
@@ -189,7 +182,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoGetResult get(String key, String namespace) throws IOException {
         validateCoreInputs("get", key, namespace);
-        Response resp = sendAndRead(encodeGet(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeGet(key, namespace));
         return switch (resp.type) {
             case VALUE     -> new DittoGetResult(resp.value, resp.version);
             case NOT_FOUND -> null;
@@ -242,7 +235,7 @@ public class DittoTcpClient implements Closeable {
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException {
         validateCoreInputs("set", key, namespace);
-        Response resp = sendAndRead(encodeSet(key, value, ttlSecs, namespace));
+        Response resp = sendAndRead(requestFactory.encodeSet(key, value, ttlSecs, namespace));
         return switch (resp.type) {
             case OK    -> new DittoSetResult(resp.version);
             case ERROR -> throw new DittoException(resp.errorCode, resp.message);
@@ -263,13 +256,19 @@ public class DittoTcpClient implements Closeable {
     /** Atomic create-if-absent with optional TTL and namespace. */
     public synchronized DittoSetNxResult setNx(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException {
-        validateCoreInputs("set", key, namespace);
-        Response resp = sendAndRead(encodeSetNx(key, value, ttlSecs, namespace));
-        return switch (resp.type) {
-            case SET_NX -> new DittoSetNxResult(resp.created, resp.version);
-            case ERROR  -> throw new DittoException(resp.errorCode, resp.message);
-            default     -> throw new IOException("Unexpected response: " + resp.type);
-        };
+        try {
+            validateCoreInputs("set", key, namespace);
+            Response resp = sendAndRead(requestFactory.encodeSetNx(key, value, ttlSecs, namespace));
+            return switch (resp.type) {
+                case SET_NX -> new DittoSetNxResult(resp.created, resp.version);
+                case ERROR  -> throw new DittoException(resp.errorCode, resp.message);
+                default     -> throw new IOException("Unexpected response: " + resp.type);
+            };
+        } catch (DittoException e) {
+            throw e;
+        } catch (IOException e) {
+            throw DittoAtomicErrorNormalizer.normalizeTcpAtomicError(e, "SET_NX");
+        }
     }
 
     /** Atomic counter increment by 1, creating the key at 1 if absent. */
@@ -288,13 +287,19 @@ public class DittoTcpClient implements Closeable {
      */
     public synchronized DittoCounterResult incr(String key, long delta, long ttlSecsOnCreate, String namespace)
             throws IOException {
-        validateCoreInputs("set", key, namespace);
-        Response resp = sendAndRead(encodeIncr(key, delta, ttlSecsOnCreate, namespace));
-        return switch (resp.type) {
-            case COUNTER -> new DittoCounterResult(resp.counterValue, resp.version);
-            case ERROR   -> throw new DittoException(resp.errorCode, resp.message);
-            default      -> throw new IOException("Unexpected response: " + resp.type);
-        };
+        try {
+            validateCoreInputs("set", key, namespace);
+            Response resp = sendAndRead(requestFactory.encodeIncr(key, delta, ttlSecsOnCreate, namespace));
+            return switch (resp.type) {
+                case COUNTER -> new DittoCounterResult(resp.counterValue, resp.version);
+                case ERROR   -> throw new DittoException(resp.errorCode, resp.message);
+                default      -> throw new IOException("Unexpected response: " + resp.type);
+            };
+        } catch (DittoException e) {
+            throw e;
+        } catch (IOException e) {
+            throw DittoAtomicErrorNormalizer.normalizeTcpAtomicError(e, "INCR");
+        }
     }
 
     /**
@@ -306,7 +311,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized boolean delete(String key, String namespace) throws IOException {
         validateCoreInputs("delete", key, namespace);
-        Response resp = sendAndRead(encodeDelete(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeDelete(key, namespace));
         return switch (resp.type) {
             case DELETED   -> true;
             case NOT_FOUND -> false;
@@ -324,7 +329,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException {
         validatePatternInputs("deleteByPattern", pattern, namespace);
-        Response resp = sendAndRead(encodeDeleteByPattern(pattern, namespace));
+        Response resp = sendAndRead(requestFactory.encodeDeleteByPattern(pattern, namespace));
         return switch (resp.type) {
             case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
             case ERROR           -> throw new DittoException(resp.errorCode, resp.message);
@@ -344,7 +349,7 @@ public class DittoTcpClient implements Closeable {
     public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
             throws IOException {
         validatePatternInputs("setTtlByPattern", pattern, namespace);
-        Response resp = sendAndRead(encodeSetTtlByPattern(pattern, ttlSecs, namespace));
+        Response resp = sendAndRead(requestFactory.encodeSetTtlByPattern(pattern, ttlSecs, namespace));
         return switch (resp.type) {
             case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
             case ERROR               -> throw new DittoException(resp.errorCode, resp.message);
@@ -359,7 +364,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void watch(String key, String namespace) throws IOException {
         validateCoreInputs("watch", key, namespace);
-        Response resp = sendAndRead(encodeWatch(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeWatch(key, namespace));
         switch (resp.type) {
             case WATCHING -> {
                 return;
@@ -376,7 +381,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void unwatch(String key, String namespace) throws IOException {
         validateCoreInputs("unwatch", key, namespace);
-        Response resp = sendAndRead(encodeUnwatch(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeUnwatch(key, namespace));
         switch (resp.type) {
             case UNWATCHED -> {
                 return;
@@ -398,123 +403,14 @@ public class DittoTcpClient implements Closeable {
 
     // ── Protobuf wire — request encoders ──────────────────────────────────────
 
-    private byte[] encodeGet(String key, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_GET, Wire.encodeKeyNamespace(key, namespace));
-    }
-
-    private byte[] encodeSet(String key, byte[] value, long ttlSecs, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_SET, Wire.encodeSetRequest(key, value, ttlSecs, namespace));
-    }
-
-    private byte[] encodeDelete(String key, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_DELETE, Wire.encodeKeyNamespace(key, namespace));
-    }
-
-    private byte[] encodeSetNx(String key, byte[] value, long ttlSecs, String namespace) {
-        // SET_NX reuses the SetRequest wire shape (proto: SetRequest set_nx = 10).
-        return Wire.wrapClientRequest(Wire.REQ_SET_NX, Wire.encodeSetRequest(key, value, ttlSecs, namespace));
-    }
-
-    private byte[] encodeIncr(String key, long delta, long ttlSecsOnCreate, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_INCR, Wire.encodeIncrRequest(key, delta, ttlSecsOnCreate, namespace));
-    }
-
-    private byte[] encodePing() {
-        return Wire.wrapClientRequest(Wire.REQ_PING, new byte[0]);
-    }
-
-    private byte[] encodeAuth(String token) {
-        return Wire.wrapClientRequest(Wire.REQ_AUTH, Wire.encodeAuthRequest(token));
-    }
-
-    private byte[] encodeWatch(String key, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_WATCH, Wire.encodeKeyNamespace(key, namespace));
-    }
-
-    private byte[] encodeUnwatch(String key, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_UNWATCH, Wire.encodeKeyNamespace(key, namespace));
-    }
-
-    private byte[] encodeDeleteByPattern(String pattern, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_DELETE_BY_PATTERN, Wire.encodePatternNamespace(pattern, namespace));
-    }
-
-    private byte[] encodeSetTtlByPattern(String pattern, long ttlSecs, String namespace) {
-        return Wire.wrapClientRequest(Wire.REQ_SET_TTL_BY_PATTERN, Wire.encodeSetTtlByPatternRequest(pattern, ttlSecs, namespace));
-    }
-
     // ── Validation ────────────────────────────────────────────────────────────
 
     private void validateCoreInputs(String op, String key, String namespace) {
-        if (!strictMode) return;
-        if (key == null || key.trim().isEmpty()) {
-            throw new IllegalArgumentException("Invalid " + op + " request: key must not be empty.");
-        }
-        if (!isStrictToken(key)) {
-            throw new IllegalArgumentException(
-                    "Invalid " + op + " request: key contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
-            );
-        }
-        if (namespace == null) return;
-        String ns = namespace.trim();
-        if (ns.isEmpty()) {
-            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not be blank when provided.");
-        }
-        if (ns.contains("::")) {
-            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not contain '::'.");
-        }
-        if (!isStrictToken(ns)) {
-            throw new IllegalArgumentException(
-                    "Invalid " + op + " request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
-            );
-        }
+        DittoClientValidators.validateCoreInputs(strictMode, op, key, namespace);
     }
 
     private void validatePatternInputs(String op, String pattern, String namespace) {
-        if (!strictMode) return;
-        if (pattern == null || pattern.trim().isEmpty()) {
-            throw new IllegalArgumentException("Invalid " + op + " request: pattern must not be empty.");
-        }
-        if (!isStrictPattern(pattern.trim())) {
-            throw new IllegalArgumentException(
-                    "Invalid " + op + " request: pattern contains unsupported characters. Allowed: [A-Za-z0-9._:-*]"
-            );
-        }
-        if (namespace == null) return;
-        String ns = namespace.trim();
-        if (ns.isEmpty()) {
-            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not be blank when provided.");
-        }
-        if (ns.contains("::")) {
-            throw new IllegalArgumentException("Invalid " + op + " request: namespace must not contain '::'.");
-        }
-        if (!isStrictToken(ns)) {
-            throw new IllegalArgumentException(
-                    "Invalid " + op + " request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
-            );
-        }
-    }
-
-    private static boolean isStrictToken(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':') {
-                continue;
-            }
-            return false;
-        }
-        return true;
-    }
-
-    private static boolean isStrictPattern(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':' || c == '*') {
-                continue;
-            }
-            return false;
-        }
-        return true;
+        DittoClientValidators.validatePatternInputs(strictMode, op, pattern, namespace);
     }
 
     // ── Network I/O ───────────────────────────────────────────────────────────
@@ -554,78 +450,19 @@ public class DittoTcpClient implements Closeable {
     }
 
     private Socket openSocket() throws IOException {
-        Socket rawSocket = new Socket();
-        rawSocket.connect(new InetSocketAddress(host, port), connectTimeoutMs);
-        rawSocket.setTcpNoDelay(true);
-        rawSocket.setSoTimeout(readTimeoutMs);
-        if (!tlsEnabled) {
-            return rawSocket;
-        }
-
-        try {
-            SSLSocketFactory factory = buildTlsContext().getSocketFactory();
-            String serverName = tlsServerName != null ? tlsServerName : host;
-            SSLSocket sslSocket = (SSLSocket) factory.createSocket(rawSocket, serverName, port, true);
-            SSLParameters parameters = sslSocket.getSSLParameters();
-            parameters.setEndpointIdentificationAlgorithm("HTTPS");
-            sslSocket.setSSLParameters(parameters);
-            sslSocket.startHandshake();
-            return sslSocket;
-        } catch (GeneralSecurityException e) {
-            try {
-                rawSocket.close();
-            } catch (IOException ignored) {
-                // best effort cleanup if TLS bootstrap fails
-            }
-            throw new IOException("Failed to initialize TCP TLS connection", e);
-        }
-    }
-
-    private SSLContext buildTlsContext() throws GeneralSecurityException, IOException {
-        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        if (tlsCaCert != null) {
-            KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-            trustStore.load(null, null);
-            try (InputStream in = new ByteArrayInputStream(loadTlsCaCertBytes(tlsCaCert))) {
-                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-                Certificate certificate = certificateFactory.generateCertificate(in);
-                trustStore.setCertificateEntry("ditto-ca", certificate);
-            }
-            trustManagerFactory.init(trustStore);
-        } else {
-            trustManagerFactory.init((KeyStore) null);
-        }
-        SSLContext context = SSLContext.getInstance("TLS");
-        context.init(null, trustManagerFactory.getTrustManagers(), null);
-        return context;
-    }
-
-    private static byte[] loadTlsCaCertBytes(String input) throws IOException {
-        if (input.contains("BEGIN CERTIFICATE")) {
-            return input.getBytes(StandardCharsets.UTF_8);
-        }
-        return Files.readAllBytes(Path.of(input));
-    }
-
-    private static String normalizeOptionalText(String value) {
-        if (value == null) {
-            return null;
-        }
-        String normalized = value.trim();
-        return normalized.isEmpty() ? null : normalized;
+        return socketFactory.openSocket(
+                host,
+                port,
+                connectTimeoutMs,
+                readTimeoutMs,
+                tlsEnabled,
+                tlsCaCert,
+                tlsServerName
+        );
     }
 
     private Response readResponse() throws IOException {
-        // 4-byte big-endian length prefix
-        int payloadLen = in.readInt();
-        if (payloadLen <= 0 || payloadLen > DEFAULT_MAX_FRAME_BYTES) {
-            throw new IOException(
-                    "Incoming frame has invalid size: " + payloadLen + " (limit " + DEFAULT_MAX_FRAME_BYTES + ")"
-            );
-        }
-        byte[] payload = new byte[payloadLen];
-        in.readFully(payload);
-        return Wire.decodeResponse(payload);
+        return responseReader.readResponse(in);
     }
 
     // ── Response container ────────────────────────────────────────────────────
@@ -730,385 +567,5 @@ public class DittoTcpClient implements Closeable {
 
         private Wire() {}
 
-        // ── Writer ────────────────────────────────────────────────────────────
-
-        static final class Writer {
-            private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
-
-            void varint(long v) {
-                if (v < 0) throw new IllegalArgumentException("negative varint");
-                while ((v & ~0x7FL) != 0) {
-                    buf.write((int) ((v & 0x7F) | 0x80));
-                    v >>>= 7;
-                }
-                buf.write((int) v);
-            }
-
-            void tag(int field, int wire) { varint(((long) field << 3) | wire); }
-
-            void uint64Field(int field, long value) {
-                if (value == 0) return;
-                tag(field, WT_VARINT); varint(value);
-            }
-
-            /**
-             * Encode a proto {@code int64} field. Always emitted (even for 0, since
-             * INCR delta is explicit-presence and 0 is meaningful); negatives use a
-             * 10-byte two's-complement varint (NOT zigzag), via an unsigned shift.
-             */
-            void int64Field(int field, long value) {
-                tag(field, WT_VARINT);
-                long v = value;
-                while ((v & ~0x7FL) != 0) {
-                    buf.write((int) ((v & 0x7F) | 0x80));
-                    v >>>= 7;
-                }
-                buf.write((int) v);
-            }
-
-            void enumField(int field, int value) {
-                if (value == 0) return;
-                tag(field, WT_VARINT); varint(value);
-            }
-
-            /** Length-delimited; emit only when payload non-empty. */
-            void ldField(int field, byte[] payload) {
-                if (payload.length == 0) return;
-                tag(field, WT_LD);
-                varint(payload.length);
-                buf.writeBytes(payload);
-            }
-
-            /** Always emit a length-delimited field — used for oneof presence. */
-            void ldFieldAlways(int field, byte[] payload) {
-                tag(field, WT_LD);
-                varint(payload.length);
-                if (payload.length > 0) buf.writeBytes(payload);
-            }
-
-            void stringField(int field, String value) {
-                if (value == null || value.isEmpty()) return;
-                byte[] raw = value.getBytes(StandardCharsets.UTF_8);
-                tag(field, WT_LD); varint(raw.length); buf.writeBytes(raw);
-            }
-
-            void bytesField(int field, byte[] value) {
-                if (value == null || value.length == 0) return;
-                tag(field, WT_LD); varint(value.length); buf.writeBytes(value);
-            }
-
-            byte[] toByteArray() { return buf.toByteArray(); }
-        }
-
-        // ── Reader ────────────────────────────────────────────────────────────
-
-        static final class Reader {
-            private final byte[] buf;
-            private int off;
-            private final int end;
-
-            Reader(byte[] buf) { this(buf, 0, buf.length); }
-            Reader(byte[] buf, int off, int end) { this.buf = buf; this.off = off; this.end = end; }
-
-            int remaining() { return end - off; }
-
-            long readVarint() throws IOException {
-                long result = 0;
-                int shift = 0;
-                while (off < end) {
-                    int b = buf[off++] & 0xFF;
-                    result |= ((long) (b & 0x7F)) << shift;
-                    if ((b & 0x80) == 0) return result;
-                    shift += 7;
-                    if (shift > 70) throw new IOException("varint too long");
-                }
-                throw new IOException("truncated varint");
-            }
-
-            int readVarintAsInt() throws IOException {
-                long v = readVarint();
-                if (v > Integer.MAX_VALUE || v < 0) throw new IOException("varint out of int range: " + v);
-                return (int) v;
-            }
-
-            int[] readTag() throws IOException {
-                long t = readVarint();
-                return new int[] { (int) (t >>> 3), (int) (t & 0x7) };
-            }
-
-            byte[] readLD() throws IOException {
-                int len = readVarintAsInt();
-                if (off + len > end) throw new IOException("truncated length-delimited field");
-                byte[] out = new byte[len];
-                System.arraycopy(buf, off, out, 0, len);
-                off += len;
-                return out;
-            }
-
-            void skip(int wire) throws IOException {
-                switch (wire) {
-                    case WT_VARINT -> readVarint();
-                    case WT_LD     -> readLD();
-                    case 1         -> off += 8;  // fixed64
-                    case 5         -> off += 4;  // fixed32
-                    default        -> throw new IOException("unsupported wire type: " + wire);
-                }
-            }
-        }
-
-        // ── Inner-message encoders ───────────────────────────────────────────
-
-        private static boolean hasNamespace(String ns) {
-            return ns != null && !ns.isBlank();
-        }
-
-        static byte[] encodeOptionalString(String value) {
-            Writer w = new Writer();
-            w.stringField(OPT_VALUE, value);
-            return w.toByteArray();
-        }
-
-        static byte[] encodeOptionalUint64(long value) {
-            Writer w = new Writer();
-            w.uint64Field(OPT_VALUE, value);
-            return w.toByteArray();
-        }
-
-        static byte[] encodeKeyNamespace(String key, String namespace) {
-            Writer w = new Writer();
-            w.stringField(KN_KEY, key);
-            if (hasNamespace(namespace)) {
-                w.ldField(KN_NAMESPACE, encodeOptionalString(namespace));
-            }
-            return w.toByteArray();
-        }
-
-        static byte[] encodePatternNamespace(String pattern, String namespace) {
-            Writer w = new Writer();
-            w.stringField(PN_PATTERN, pattern);
-            if (hasNamespace(namespace)) {
-                w.ldField(PN_NAMESPACE, encodeOptionalString(namespace));
-            }
-            return w.toByteArray();
-        }
-
-        static byte[] encodeSetRequest(String key, byte[] value, long ttlSecs, String namespace) {
-            Writer w = new Writer();
-            w.stringField(SR_KEY, key);
-            w.bytesField(SR_VALUE, value);
-            if (ttlSecs > 0) {
-                w.ldField(SR_TTL_SECS, encodeOptionalUint64(ttlSecs));
-            }
-            if (hasNamespace(namespace)) {
-                w.ldField(SR_NAMESPACE, encodeOptionalString(namespace));
-            }
-            return w.toByteArray();
-        }
-
-        static byte[] encodeIncrRequest(String key, long delta, long ttlSecsOnCreate, String namespace) {
-            Writer w = new Writer();
-            w.stringField(INCR_KEY, key);
-            // Always emit delta so the server uses the caller's value verbatim
-            // rather than its absent-default of 1.
-            w.int64Field(INCR_DELTA, delta);
-            if (ttlSecsOnCreate > 0) {
-                w.ldField(INCR_TTL_SECS_ON_CREATE, encodeOptionalUint64(ttlSecsOnCreate));
-            }
-            if (hasNamespace(namespace)) {
-                w.ldField(INCR_NAMESPACE, encodeOptionalString(namespace));
-            }
-            return w.toByteArray();
-        }
-
-        static byte[] encodeSetTtlByPatternRequest(String pattern, long ttlSecs, String namespace) {
-            Writer w = new Writer();
-            w.stringField(STBP_PATTERN, pattern);
-            if (ttlSecs > 0) {
-                w.ldField(STBP_TTL_SECS, encodeOptionalUint64(ttlSecs));
-            }
-            if (hasNamespace(namespace)) {
-                w.ldField(STBP_NAMESPACE, encodeOptionalString(namespace));
-            }
-            return w.toByteArray();
-        }
-
-        static byte[] encodeAuthRequest(String token) {
-            Writer w = new Writer();
-            w.stringField(AUTH_TOKEN, token);
-            return w.toByteArray();
-        }
-
-        // ── ClientRequest envelope wrapper ───────────────────────────────────
-
-        static byte[] wrapClientRequest(int variantField, byte[] inner) {
-            Writer reqWriter = new Writer();
-            reqWriter.ldFieldAlways(variantField, inner);
-            byte[] requestBytes = reqWriter.toByteArray();
-
-            Writer envWriter = new Writer();
-            envWriter.enumField(ENV_VERSION, PROTOCOL_VERSION);
-            envWriter.ldFieldAlways(ENV_CLIENT_REQUEST, requestBytes);
-            byte[] envelope = envWriter.toByteArray();
-
-            byte[] out = new byte[4 + envelope.length];
-            out[0] = (byte) ((envelope.length >>> 24) & 0xFF);
-            out[1] = (byte) ((envelope.length >>> 16) & 0xFF);
-            out[2] = (byte) ((envelope.length >>> 8)  & 0xFF);
-            out[3] = (byte) (envelope.length & 0xFF);
-            System.arraycopy(envelope, 0, out, 4, envelope.length);
-            return out;
-        }
-
-        // ── Decoder ──────────────────────────────────────────────────────────
-
-        static Response decodeResponse(byte[] payload) throws IOException {
-            Reader env = new Reader(payload);
-            byte[] responseBytes = null;
-            long version = 0;
-            while (env.remaining() > 0) {
-                int[] t = env.readTag();
-                int field = t[0], wire = t[1];
-                if (field == ENV_VERSION && wire == WT_VARINT) {
-                    version = env.readVarint();
-                } else if (field == ENV_CLIENT_RESPONSE && wire == WT_LD) {
-                    responseBytes = env.readLD();
-                } else {
-                    env.skip(wire);
-                }
-            }
-            if (version != 0 && version != PROTOCOL_VERSION) {
-                throw new IOException("unsupported protocol version: " + version);
-            }
-            if (responseBytes == null) {
-                throw new IOException("Envelope is missing client_response payload");
-            }
-
-            Reader r = new Reader(responseBytes);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (wire != WT_LD) { r.skip(wire); continue; }
-                byte[] inner = r.readLD();
-                Response out = new Response();
-                switch (field) {
-                    case RESP_VALUE -> { decodeValue(inner, out);   out.type = ResponseType.VALUE;        return out; }
-                    case RESP_OK -> {    decodeOk(inner, out);      out.type = ResponseType.OK;           return out; }
-                    case RESP_DELETED -> {                          out.type = ResponseType.DELETED;      return out; }
-                    case RESP_NOT_FOUND -> {                        out.type = ResponseType.NOT_FOUND;    return out; }
-                    case RESP_PONG -> {                             out.type = ResponseType.PONG;         return out; }
-                    case RESP_AUTH_OK -> {                          out.type = ResponseType.AUTH_OK;      return out; }
-                    case RESP_ERROR -> { decodeError(inner, out);   out.type = ResponseType.ERROR;        return out; }
-                    case RESP_WATCHING -> {                         out.type = ResponseType.WATCHING;     return out; }
-                    case RESP_UNWATCHED -> {                        out.type = ResponseType.UNWATCHED;    return out; }
-                    case RESP_WATCH_EVENT -> { decodeWatchEvent(inner, out); out.type = ResponseType.WATCH_EVENT; return out; }
-                    case RESP_PATTERN_DELETED -> {     out.count = decodeCount(inner); out.type = ResponseType.PATTERN_DELETED;     return out; }
-                    case RESP_PATTERN_TTL_UPDATED -> { out.count = decodeCount(inner); out.type = ResponseType.PATTERN_TTL_UPDATED; return out; }
-                    case RESP_SET_NX -> { decodeSetNx(inner, out);   out.type = ResponseType.SET_NX;  return out; }
-                    case RESP_COUNTER -> { decodeCounter(inner, out); out.type = ResponseType.COUNTER; return out; }
-                    default -> {} // unknown variant — keep scanning
-                }
-            }
-            throw new IOException("ClientResponse oneof has no active field");
-        }
-
-        private static void decodeValue(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == VAL_KEY && wire == WT_LD)        out.key     = new String(r.readLD(), StandardCharsets.UTF_8);
-                else if (field == VAL_VALUE && wire == WT_LD) out.value   = r.readLD();
-                else if (field == VAL_VERSION && wire == WT_VARINT) out.version = r.readVarint();
-                else r.skip(wire);
-            }
-            if (out.value == null) out.value = new byte[0];
-        }
-
-        private static void decodeOk(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == VR_VERSION && wire == WT_VARINT) out.version = r.readVarint();
-                else r.skip(wire);
-            }
-        }
-
-        private static void decodeSetNx(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == SNX_CREATED && wire == WT_VARINT)      out.created = r.readVarint() != 0;
-                else if (field == SNX_VERSION && wire == WT_VARINT) out.version = r.readVarint();
-                else r.skip(wire);
-            }
-        }
-
-        private static void decodeCounter(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                // proto int64 read as a Java long is already the correct signed value
-                // (a -1 arrives as a 10-byte two's-complement varint == 0xFFFF..FF).
-                if (field == CTR_VALUE && wire == WT_VARINT)        out.counterValue = r.readVarint();
-                else if (field == CTR_VERSION && wire == WT_VARINT) out.version = r.readVarint();
-                else r.skip(wire);
-            }
-        }
-
-        private static void decodeError(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            int codeIdx = 0;
-            String message = "";
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == ERR_CODE && wire == WT_VARINT)        codeIdx = r.readVarintAsInt();
-                else if (field == ERR_MESSAGE && wire == WT_LD)    message = new String(r.readLD(), StandardCharsets.UTF_8);
-                else r.skip(wire);
-            }
-            out.errorCode = DittoErrorCode.fromIndex(codeIdx);
-            out.message = message;
-        }
-
-        private static void decodeWatchEvent(byte[] buf, Response out) throws IOException {
-            Reader r = new Reader(buf);
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == WE_KEY && wire == WT_LD)        out.key = new String(r.readLD(), StandardCharsets.UTF_8);
-                else if (field == WE_VALUE && wire == WT_LD) {
-                    out.value = decodeOptionalBytes(r.readLD());
-                    out.hasValue = true;
-                } else if (field == WE_VERSION && wire == WT_VARINT) out.version = r.readVarint();
-                else r.skip(wire);
-            }
-        }
-
-        private static byte[] decodeOptionalBytes(byte[] buf) throws IOException {
-            Reader r = new Reader(buf);
-            byte[] out = new byte[0];
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == OPT_VALUE && wire == WT_LD) out = r.readLD();
-                else r.skip(wire);
-            }
-            return out;
-        }
-
-        private static long decodeCount(byte[] buf) throws IOException {
-            Reader r = new Reader(buf);
-            long count = 0;
-            while (r.remaining() > 0) {
-                int[] t = r.readTag();
-                int field = t[0], wire = t[1];
-                if (field == COUNT_FIELD && wire == WT_VARINT) count = r.readVarint();
-                else r.skip(wire);
-            }
-            return count;
-        }
     }
 }

@@ -15,32 +15,32 @@ import (
 )
 
 type TCPClientOptions struct {
-	Host          string
-	Port          int
-	AuthToken     string
-	TLS           bool
-	TLSCACert     string
-	TLSServerName string
+	Host           string
+	Port           int
+	AuthToken      string
+	TLS            bool
+	TLSCACert      string
+	TLSServerName  string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
-	Timeout       time.Duration
-	MaxFrameBytes uint32
-	StrictMode    bool
-	AutoReconnect bool
+	Timeout        time.Duration
+	MaxFrameBytes  uint32
+	StrictMode     bool
+	AutoReconnect  bool
 }
 
 type TCPClient struct {
-	host          string
-	port          int
-	authToken     string
-	tlsEnabled    bool
-	tlsCACert     string
-	tlsServerName string
+	host           string
+	port           int
+	authToken      string
+	tlsEnabled     bool
+	tlsCACert      string
+	tlsServerName  string
 	connectTimeout time.Duration
 	readTimeout    time.Duration
-	maxFrameBytes uint32
-	strictMode    bool
-	autoReconnect bool
+	maxFrameBytes  uint32
+	strictMode     bool
+	autoReconnect  bool
 
 	mu   sync.Mutex
 	conn net.Conn
@@ -74,50 +74,24 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 		maxFrame = 8 * 1024 * 1024
 	}
 	return &TCPClient{
-		host: host,
-		port: port,
-		authToken: opts.AuthToken,
-		tlsEnabled: opts.TLS,
-		tlsCACert: opts.TLSCACert,
-		tlsServerName: opts.TLSServerName,
+		host:           host,
+		port:           port,
+		authToken:      opts.AuthToken,
+		tlsEnabled:     opts.TLS,
+		tlsCACert:      opts.TLSCACert,
+		tlsServerName:  opts.TLSServerName,
 		connectTimeout: connectTimeout,
-		readTimeout: readTimeout,
-		maxFrameBytes: maxFrame,
-		strictMode: opts.StrictMode,
-		autoReconnect: opts.AutoReconnect,
+		readTimeout:    readTimeout,
+		maxFrameBytes:  maxFrame,
+		strictMode:     opts.StrictMode,
+		autoReconnect:  opts.AutoReconnect,
 	}
 }
 
 func (c *TCPClient) Connect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.conn != nil {
-		return nil
-	}
-	conn, err := c.dialConn()
-	if err != nil {
-		return err
-	}
-	c.conn = conn
-	if c.authToken != "" {
-		resp, err := c.sendLocked(encodeAuth(c.authToken))
-		if err != nil {
-			_ = c.conn.Close()
-			c.conn = nil
-			return err
-		}
-		if resp.kind == respError {
-			_ = c.conn.Close()
-			c.conn = nil
-			return &DittoError{Code: resp.code, Message: resp.message}
-		}
-		if resp.kind != respAuthOK {
-			_ = c.conn.Close()
-			c.conn = nil
-			return fmt.Errorf("unexpected auth response")
-		}
-	}
-	return nil
+	return c.connectLocked()
 }
 
 func (c *TCPClient) Close() error {
@@ -135,6 +109,10 @@ func (c *TCPClient) ensureConnectedLocked() error {
 	if c.conn != nil {
 		return nil
 	}
+	return c.connectLocked()
+}
+
+func (c *TCPClient) connectLocked() error {
 	conn, err := c.dialConn()
 	if err != nil {
 		return err
@@ -283,11 +261,8 @@ func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "get", key, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateCoreInputs(c.strictMode, "get", key, ns); err != nil {
 		return nil, err
 	}
 	resp, err := c.sendRequestLocked(encodeGet(key, ns))
@@ -302,7 +277,7 @@ func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	case respError:
 		return nil, &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, parseUnexpectedResponseError()
 	}
 }
 
@@ -312,25 +287,7 @@ func (c *TCPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	if err := validateCoreInputs(c.strictMode, "set", key, nil); err != nil {
-		return nil, err
-	}
-	var ttl *uint64
-	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
-		ttl = &ttlSecs[0]
-	}
-	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, nil))
-	if err != nil {
-		return nil, err
-	}
-	switch resp.kind {
-	case respOK:
-		return &SetResult{Version: resp.version}, nil
-	case respError:
-		return nil, &DittoError{Code: resp.code, Message: resp.message}
-	default:
-		return nil, fmt.Errorf("unexpected response")
-	}
+	return c.setBytesLocked(key, value, nil, optionalUint64FromSlice(ttlSecs...))
 }
 
 func (c *TCPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult, error) {
@@ -343,29 +300,11 @@ func (c *TCPClient) SetInNamespace(key string, value []byte, namespace string, t
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace)
+	ns, err := resolveCoreNamespaceValue(c.strictMode, "set", key, namespace)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
-		return nil, err
-	}
-	var ttl *uint64
-	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
-		ttl = &ttlSecs[0]
-	}
-	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, ns))
-	if err != nil {
-		return nil, err
-	}
-	switch resp.kind {
-	case respOK:
-		return &SetResult{Version: resp.version}, nil
-	case respError:
-		return nil, &DittoError{Code: resp.code, Message: resp.message}
-	default:
-		return nil, fmt.Errorf("unexpected response")
-	}
+	return c.setBytesLocked(key, value, ns, optionalUint64FromSlice(ttlSecs...))
 }
 
 func (c *TCPClient) SetStringInNamespace(key, value, namespace string, ttlSecs ...uint64) (*SetResult, error) {
@@ -378,17 +317,11 @@ func (c *TCPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace ..
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, normalizeAtomicTCPErr(err, "SET_NX")
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "set", key, namespace...)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
-		return nil, err
-	}
-	var ttl *uint64
-	if ttlSecs > 0 {
-		ttl = &ttlSecs
-	}
+	ttl := optionalUint64(ttlSecs)
 	resp, err := c.sendRequestLocked(encodeSetNX(key, value, ttl, ns))
 	if err != nil {
 		return nil, normalizeAtomicTCPErr(err, "SET_NX")
@@ -409,20 +342,12 @@ func (c *TCPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, namesp
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, normalizeAtomicTCPErr(err, "INCR")
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "set", key, namespace...)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
-		return nil, err
-	}
-	var deltaPtr *int64
-	deltaPtr = &delta
-	var ttl *uint64
-	if ttlSecsOnCreate > 0 {
-		ttl = &ttlSecsOnCreate
-	}
-	resp, err := c.sendRequestLocked(encodeIncr(key, deltaPtr, ttl, ns))
+	ttl := optionalUint64(ttlSecsOnCreate)
+	resp, err := c.sendRequestLocked(encodeIncr(key, optionalInt64(delta), ttl, ns))
 	if err != nil {
 		return nil, normalizeAtomicTCPErr(err, "INCR")
 	}
@@ -442,11 +367,8 @@ func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return false, err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "delete", key, namespace...)
 	if err != nil {
-		return false, err
-	}
-	if err := validateCoreInputs(c.strictMode, "delete", key, ns); err != nil {
 		return false, err
 	}
 	resp, err := c.sendRequestLocked(encodeDelete(key, ns))
@@ -461,7 +383,7 @@ func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	case respError:
 		return false, &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return false, fmt.Errorf("unexpected response")
+		return false, parseUnexpectedResponseError()
 	}
 }
 
@@ -471,11 +393,8 @@ func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*Delet
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolvePatternNamespace(c.strictMode, "deleteByPattern", pattern, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validatePatternInputs(c.strictMode, "deleteByPattern", pattern, ns); err != nil {
 		return nil, err
 	}
 	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, ns))
@@ -488,7 +407,7 @@ func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*Delet
 	case respError:
 		return nil, &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, parseUnexpectedResponseError()
 	}
 }
 
@@ -498,17 +417,11 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 	if err := c.ensureConnectedLocked(); err != nil {
 		return nil, err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolvePatternNamespace(c.strictMode, "setTtlByPattern", pattern, namespace...)
 	if err != nil {
 		return nil, err
 	}
-	if err := validatePatternInputs(c.strictMode, "setTtlByPattern", pattern, ns); err != nil {
-		return nil, err
-	}
-	var ttl *uint64
-	if ttlSecs > 0 {
-		ttl = &ttlSecs
-	}
+	ttl := optionalUint64(ttlSecs)
 	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, ns))
 	if err != nil {
 		return nil, err
@@ -519,7 +432,7 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 	case respError:
 		return nil, &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, parseUnexpectedResponseError()
 	}
 }
 
@@ -529,11 +442,8 @@ func (c *TCPClient) Watch(key string, namespace ...string) error {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "watch", key, namespace...)
 	if err != nil {
-		return err
-	}
-	if err := validateCoreInputs(c.strictMode, "watch", key, ns); err != nil {
 		return err
 	}
 	resp, err := c.sendRequestLocked(encodeWatch(key, ns))
@@ -546,7 +456,7 @@ func (c *TCPClient) Watch(key string, namespace ...string) error {
 	case respError:
 		return &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return fmt.Errorf("unexpected response")
+		return parseUnexpectedResponseError()
 	}
 }
 
@@ -556,11 +466,8 @@ func (c *TCPClient) Unwatch(key string, namespace ...string) error {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return err
 	}
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "unwatch", key, namespace...)
 	if err != nil {
-		return err
-	}
-	if err := validateCoreInputs(c.strictMode, "unwatch", key, ns); err != nil {
 		return err
 	}
 	resp, err := c.sendRequestLocked(encodeUnwatch(key, ns))
@@ -573,7 +480,7 @@ func (c *TCPClient) Unwatch(key string, namespace ...string) error {
 	case respError:
 		return &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return fmt.Errorf("unexpected response")
+		return parseUnexpectedResponseError()
 	}
 }
 
@@ -601,34 +508,24 @@ func (c *TCPClient) WaitWatchEvent() (*WatchEventResult, error) {
 	case respError:
 		return nil, &DittoError{Code: resp.code, Message: resp.message}
 	default:
-		return nil, fmt.Errorf("unexpected response")
+		return nil, parseUnexpectedResponseError()
 	}
 }
 
-func normalizeAtomicTCPErr(err error, operation string) error {
-	if err == nil {
-		return nil
+func (c *TCPClient) setBytesLocked(key string, value []byte, namespace *string, ttl *uint64) (*SetResult, error) {
+	if err := validateCoreInputs(c.strictMode, "set", key, namespace); err != nil {
+		return nil, err
 	}
-	if de, ok := err.(*DittoError); ok {
-		return de
+	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, namespace))
+	if err != nil {
+		return nil, err
 	}
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "unsupported") ||
-		strings.Contains(msg, "protocol") ||
-		strings.Contains(msg, "decode") ||
-		strings.Contains(msg, "clientresponse oneof") ||
-		strings.Contains(msg, "unexpected response") ||
-		strings.Contains(msg, "eof") ||
-		strings.Contains(msg, "connection reset") {
-		return &DittoError{
-			Code:    ErrUnsupportedRequest,
-			Message: fmt.Sprintf("server does not support %s; upgrade dittod to a version with atomic primitives", operation),
-		}
+	switch resp.kind {
+	case respOK:
+		return &SetResult{Version: resp.version}, nil
+	case respError:
+		return nil, &DittoError{Code: resp.code, Message: resp.message}
+	default:
+		return nil, parseUnexpectedResponseError()
 	}
-	return err
-}
-
-func normalizeNamespace(namespace ...string) *string {
-	ns, _ := normalizedNamespaceStrict(false, namespace...)
-	return ns
 }

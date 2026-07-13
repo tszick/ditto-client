@@ -1,0 +1,131 @@
+{
+  "version": "1.0",
+  "suite": "strict-validation",
+  "description": "Cross-SDK strict validation and namespace normalization rules for Go, Node, and Java clients.",
+  "cases": [
+    {
+      "id": "core-valid-key-and-namespace",
+      "operation": "validate_core",
+      "inputs": {
+        "kind": "core",
+        "strict_mode": true,
+        "op": "get",
+        "key": "alpha:key-1",
+        "namespace": "tenant-a"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "core-invalid-empty-key",
+      "operation": "validate_core",
+      "inputs": {
+        "kind": "core",
+        "strict_mode": true,
+        "op": "watch",
+        "key": " ",
+        "namespace": null
+      },
+      "expect": {
+        "valid": false,
+        "error_contains": "key must not be empty"
+      }
+    },
+    {
+      "id": "core-invalid-blank-namespace",
+      "operation": "validate_core",
+      "inputs": {
+        "kind": "core",
+        "strict_mode": true,
+        "op": "delete",
+        "key": "alpha:key-2",
+        "namespace": "   "
+      },
+      "expect": {
+        "valid": false,
+        "error_contains": "namespace must not be blank when provided"
+      }
+    },
+    {
+      "id": "core-invalid-double-colon-namespace",
+      "operation": "validate_core",
+      "inputs": {
+        "kind": "core",
+        "strict_mode": true,
+        "op": "unwatch",
+        "key": "alpha:key-3",
+        "namespace": "team::west"
+      },
+      "expect": {
+        "valid": false,
+        "error_contains": "namespace must not contain '::'"
+      }
+    },
+    {
+      "id": "pattern-valid",
+      "operation": "validate_pattern",
+      "inputs": {
+        "kind": "pattern",
+        "strict_mode": true,
+        "op": "deleteByPattern",
+        "pattern": "tenant:*",
+        "namespace": "tenant-a"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "pattern-invalid-characters",
+      "operation": "validate_pattern",
+      "inputs": {
+        "kind": "pattern",
+        "strict_mode": true,
+        "op": "setTtlByPattern",
+        "pattern": "bad pattern*",
+        "namespace": null
+      },
+      "expect": {
+        "valid": false,
+        "error_contains": "pattern contains unsupported characters"
+      }
+    },
+    {
+      "id": "normalize-lenient-blank-to-null",
+      "operation": "normalize_namespace",
+      "inputs": {
+        "kind": "normalize_namespace",
+        "strict_mode": false,
+        "namespace": "   "
+      },
+      "expect": {
+        "normalized": null
+      }
+    },
+    {
+      "id": "normalize-strict-trims-value",
+      "operation": "normalize_namespace",
+      "inputs": {
+        "kind": "normalize_namespace",
+        "strict_mode": true,
+        "namespace": " tenant-a "
+      },
+      "expect": {
+        "normalized": "tenant-a"
+      }
+    },
+    {
+      "id": "normalize-strict-rejects-double-colon",
+      "operation": "normalize_namespace",
+      "inputs": {
+        "kind": "normalize_namespace",
+        "strict_mode": true,
+        "namespace": "team::west"
+      },
+      "expect": {
+        "error_contains": "namespace must not contain '::'"
+      }
+    }
+  ]
+}

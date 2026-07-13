@@ -5,8 +5,8 @@
  * Regenerate with: cd src/tools && npm run generate
  */
 
+import { unsupportedAtomicHttpError } from './client-internal.js';
 import { DittoHttpClientBase } from './http-client-base.js';
-import { DittoError } from './types.js';
 import type {
   DittoCounterResult,
   DittoDeleteByPatternResult,
@@ -18,11 +18,6 @@ import type {
 } from './types.js';
 
 export class DittoHttpClient extends DittoHttpClientBase {
-  private namespaceHeaders(namespace?: string): Record<string, string> | undefined {
-    if (!namespace || namespace.trim() === '') return undefined;
-    return { 'X-Ditto-Namespace': namespace };
-  }
-
   // ── Generated endpoint methods (from api/ditto-http-api.yaml) ─────────────
 
   /** Check whether the node is alive and accepting requests. */
@@ -56,10 +51,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
       : `/key/${encodeURIComponent(key)}`;
     const resp = await this.request(url, {
       method:  'PUT',
-      headers: {
-        'Content-Type': 'text/plain',
-        ...(this.namespaceHeaders(namespace) ?? {}),
-      },
+      headers: this.contentTypeHeaders('text/plain', namespace),
       body:    value,
     });
     await this.assertOk(resp);
@@ -77,10 +69,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
     const url = `/key/${encodeURIComponent(key)}?nx=1${ttlSecs > 0 ? `&ttl=${ttlSecs}` : ''}`;
     const resp = await this.request(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        ...(this.namespaceHeaders(namespace) ?? {}),
-      },
+      headers: this.contentTypeHeaders('application/octet-stream', namespace),
       body: typeof value === 'string' ? Buffer.from(value, 'utf8') : value,
     });
     if ([400, 404, 501].includes(resp.status)) {
@@ -105,10 +94,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
     }
     const resp = await this.request(`/key/${encodeURIComponent(key)}/incr`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.namespaceHeaders(opts?.namespace) ?? {}),
-      },
+      headers: this.contentTypeHeaders('application/json', opts?.namespace),
       body: JSON.stringify(payload),
     });
     if ([400, 404, 501].includes(resp.status)) {
@@ -136,10 +122,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
     this.validatePatternInputs('deleteByPattern', pattern, namespace);
     const resp = await this.request('/keys/delete-by-pattern', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.namespaceHeaders(namespace) ?? {}),
-      },
+      headers: this.contentTypeHeaders('application/json', namespace),
       body: JSON.stringify({ pattern }),
     });
     await this.assertOk(resp);
@@ -159,10 +142,7 @@ export class DittoHttpClient extends DittoHttpClientBase {
     }
     const resp = await this.request('/keys/ttl-by-pattern', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.namespaceHeaders(namespace) ?? {}),
-      },
+      headers: this.contentTypeHeaders('application/json', namespace),
       body: JSON.stringify(payload),
     });
     await this.assertOk(resp);
@@ -177,22 +157,4 @@ export class DittoHttpClient extends DittoHttpClientBase {
     return resp.json() as Promise<DittoStatsResult>;
   }
 
-}
-
-async function unsupportedAtomicHttpError(
-  resp: Response,
-  operation: 'SET_NX' | 'INCR',
-): Promise<Error> {
-  try {
-    const body = await resp.json() as { error?: string; message?: string };
-    if (body.error === 'UnsupportedRequest') {
-      return new DittoError('UnsupportedRequest', body.message ?? 'UnsupportedRequest');
-    }
-  } catch {
-    // fall through to normalized message below
-  }
-  return new DittoError(
-    'UnsupportedRequest',
-    `UnsupportedRequest: server does not support ${operation}. Upgrade dittod to a version with atomic primitives.`,
-  );
 }

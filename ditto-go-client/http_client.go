@@ -2,8 +2,8 @@ package ditto
 
 import (
 	"bytes"
-	"crypto/x509"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -190,11 +190,8 @@ func (c *HTTPClient) Ping() (bool, error) {
 }
 
 func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "get", key, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateCoreInputs(c.strictMode, "get", key, ns); err != nil {
 		return nil, err
 	}
 	b, status, err := c.request(http.MethodGet, "/key/"+url.PathEscape(key), nil, "", namespaceHeaderPtr(ns))
@@ -227,27 +224,7 @@ func (c *HTTPClient) Get(key string, namespace ...string) (*GetResult, error) {
 }
 
 func (c *HTTPClient) Set(key string, value []byte, ttlSecs ...uint64) (*SetResult, error) {
-	if err := validateCoreInputs(c.strictMode, "set", key, nil); err != nil {
-		return nil, err
-	}
-	path := "/key/" + url.PathEscape(key)
-	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
-		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
-	}
-	b, status, err := c.request(http.MethodPut, path, value, "text/plain", nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := parseHTTPError(status, b); err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Version uint64 `json:"version"`
-	}
-	if err := json.Unmarshal(b, &payload); err != nil {
-		return nil, err
-	}
-	return &SetResult{Version: payload.Version}, nil
+	return c.setBytes(key, value, nil, optionalUint64FromSlice(ttlSecs...))
 }
 
 func (c *HTTPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult, error) {
@@ -255,28 +232,11 @@ func (c *HTTPClient) SetString(key, value string, ttlSecs ...uint64) (*SetResult
 }
 
 func (c *HTTPClient) SetInNamespace(key string, value []byte, namespace string, ttlSecs ...uint64) (*SetResult, error) {
-	ns := strings.TrimSpace(namespace)
-	if err := validateCoreInputs(c.strictMode, "set", key, &ns); err != nil {
-		return nil, err
-	}
-	path := "/key/" + url.PathEscape(key)
-	if len(ttlSecs) > 0 && ttlSecs[0] > 0 {
-		path += fmt.Sprintf("?ttl=%d", ttlSecs[0])
-	}
-	b, status, err := c.request(http.MethodPut, path, value, "text/plain", namespaceHeaderPtr(&ns))
+	ns, err := resolveCoreNamespaceValue(c.strictMode, "set", key, namespace)
 	if err != nil {
 		return nil, err
 	}
-	if err := parseHTTPError(status, b); err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Version uint64 `json:"version"`
-	}
-	if err := json.Unmarshal(b, &payload); err != nil {
-		return nil, err
-	}
-	return &SetResult{Version: payload.Version}, nil
+	return c.setBytes(key, value, ns, optionalUint64FromSlice(ttlSecs...))
 }
 
 func (c *HTTPClient) SetStringInNamespace(key, value, namespace string, ttlSecs ...uint64) (*SetResult, error) {
@@ -284,11 +244,8 @@ func (c *HTTPClient) SetStringInNamespace(key, value, namespace string, ttlSecs 
 }
 
 func (c *HTTPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace ...string) (*SetNXResult, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "set", key, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
 		return nil, err
 	}
 	path := "/key/" + url.PathEscape(key) + "?nx=1"
@@ -300,7 +257,7 @@ func (c *HTTPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace .
 		return nil, err
 	}
 	if status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusNotImplemented {
-		if err := parseAtomicHTTPUnsupported(status, b, "SET_NX"); err != nil {
+		if err := parseAtomicHTTPUnsupported(b, "SET_NX"); err != nil {
 			return nil, err
 		}
 	}
@@ -322,11 +279,8 @@ func (c *HTTPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace .
 }
 
 func (c *HTTPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, namespace ...string) (*IncrResult, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "set", key, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateCoreInputs(c.strictMode, "set", key, ns); err != nil {
 		return nil, err
 	}
 	payload := map[string]any{"delta": delta}
@@ -339,7 +293,7 @@ func (c *HTTPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, names
 		return nil, err
 	}
 	if status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusNotImplemented {
-		if err := parseAtomicHTTPUnsupported(status, b, "INCR"); err != nil {
+		if err := parseAtomicHTTPUnsupported(b, "INCR"); err != nil {
 			return nil, err
 		}
 	}
@@ -365,11 +319,8 @@ func (c *HTTPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, names
 }
 
 func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolveCoreNamespace(c.strictMode, "delete", key, namespace...)
 	if err != nil {
-		return false, err
-	}
-	if err := validateCoreInputs(c.strictMode, "delete", key, ns); err != nil {
 		return false, err
 	}
 	b, status, err := c.request(http.MethodDelete, "/key/"+url.PathEscape(key), nil, "", namespaceHeaderPtr(ns))
@@ -389,11 +340,8 @@ func (c *HTTPClient) Delete(key string, namespace ...string) (bool, error) {
 }
 
 func (c *HTTPClient) DeleteByPattern(pattern string, namespace ...string) (*DeleteByPatternResult, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolvePatternNamespace(c.strictMode, "deleteByPattern", pattern, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validatePatternInputs(c.strictMode, "deleteByPattern", pattern, ns); err != nil {
 		return nil, err
 	}
 	payload, _ := json.Marshal(map[string]string{"pattern": pattern})
@@ -412,11 +360,8 @@ func (c *HTTPClient) DeleteByPattern(pattern string, namespace ...string) (*Dele
 }
 
 func (c *HTTPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ...string) (*SetTtlByPatternResult, error) {
-	ns, err := normalizedNamespaceStrict(c.strictMode, namespace...)
+	ns, err := resolvePatternNamespace(c.strictMode, "setTtlByPattern", pattern, namespace...)
 	if err != nil {
-		return nil, err
-	}
-	if err := validatePatternInputs(c.strictMode, "setTtlByPattern", pattern, ns); err != nil {
 		return nil, err
 	}
 	m := map[string]any{"pattern": pattern}
@@ -457,38 +402,44 @@ func namespaceHeader(namespace ...string) map[string]string {
 	if len(namespace) == 0 {
 		return nil
 	}
-	ns := strings.TrimSpace(namespace[0])
-	if ns == "" {
-		return nil
-	}
-	return map[string]string{"X-Ditto-Namespace": ns}
+	return namespaceHeaderValue(namespace[0])
 }
 
 func namespaceHeaderPtr(namespace *string) map[string]string {
 	if namespace == nil {
 		return nil
 	}
-	ns := strings.TrimSpace(*namespace)
+	return namespaceHeaderValue(*namespace)
+}
+
+func namespaceHeaderValue(namespace string) map[string]string {
+	ns := strings.TrimSpace(namespace)
 	if ns == "" {
 		return nil
 	}
 	return map[string]string{"X-Ditto-Namespace": ns}
 }
 
-func parseAtomicHTTPUnsupported(status int, body []byte, operation string) error {
+func (c *HTTPClient) setBytes(key string, value []byte, namespace *string, ttl *uint64) (*SetResult, error) {
+	if err := validateCoreInputs(c.strictMode, "set", key, namespace); err != nil {
+		return nil, err
+	}
+	path := "/key/" + url.PathEscape(key)
+	if ttl != nil {
+		path += fmt.Sprintf("?ttl=%d", *ttl)
+	}
+	b, status, err := c.request(http.MethodPut, path, value, "text/plain", namespaceHeaderPtr(namespace))
+	if err != nil {
+		return nil, err
+	}
+	if err := parseHTTPError(status, b); err != nil {
+		return nil, err
+	}
 	var payload struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
+		Version uint64 `json:"version"`
 	}
-	if json.Unmarshal(body, &payload) == nil && payload.Error == ErrUnsupportedRequest {
-		msg := payload.Message
-		if msg == "" {
-			msg = payload.Error
-		}
-		return &DittoError{Code: ErrUnsupportedRequest, Message: msg}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil, err
 	}
-	return &DittoError{
-		Code:    ErrUnsupportedRequest,
-		Message: fmt.Sprintf("server does not support %s; upgrade dittod to a version with atomic primitives", operation),
-	}
+	return &SetResult{Version: payload.Version}, nil
 }

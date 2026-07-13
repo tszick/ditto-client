@@ -1,5 +1,5 @@
 // Generated from api/ditto-http-api.yaml v1.1.0
-// DO NOT EDIT MANUALLY — regenerate with: cd src/tools && npm run generate
+// DO NOT EDIT MANUALLY - regenerate with: cd src/tools && npm run generate
 
 package io.ditto.client;
 
@@ -11,8 +11,6 @@ import java.util.Base64;
 import java.util.Map;
 
 public class DittoHttpClient extends DittoHttpClientBase {
-
-    // ── Factory / Builder ─────────────────────────────────────────────────────
 
     public static Builder builder()              { return new Builder(); }
     public static DittoHttpClient connect()      { return builder().build(); }
@@ -26,8 +24,6 @@ public class DittoHttpClient extends DittoHttpClientBase {
     public static final class Builder extends DittoHttpClientBase.Builder<Builder> {
         @Override public DittoHttpClient build() { return new DittoHttpClient(this); }
     }
-
-    // ── Generated endpoint methods (from api/ditto-http-api.yaml) ──────────
 
     /** Check whether the node is alive and accepting requests. */
     public boolean ping() throws IOException, InterruptedException {
@@ -47,11 +43,11 @@ public class DittoHttpClient extends DittoHttpClientBase {
         HttpResponse<String> resp = send(requestBuilder("/key/" + urlEncode(key), namespace).GET().build());
         if (resp.statusCode() == 404) return null;
         assertOk(resp);
-        Map<?, ?> body    = mapper.readValue(resp.body(), Map.class);
-        String    valueBase64 = (String) body.get("value_base64");
-        String    value   = (String) body.get("value");
-        long      version = ((Number) body.get("version")).longValue();
-        byte[]    bytes   = valueBase64 != null && !valueBase64.isBlank()
+        Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
+        String valueBase64 = (String) body.get("value_base64");
+        String value = (String) body.get("value");
+        long version = ((Number) body.get("version")).longValue();
+        byte[] bytes = valueBase64 != null && !valueBase64.isBlank()
                 ? Base64.getDecoder().decode(valueBase64)
                 : value.getBytes(StandardCharsets.UTF_8);
         return new DittoGetResult(bytes, version);
@@ -77,8 +73,8 @@ public class DittoHttpClient extends DittoHttpClientBase {
                 .build();
         HttpResponse<String> resp = send(req);
         assertOk(resp);
-        Map<?, ?> body    = mapper.readValue(resp.body(), Map.class);
-        long      version = ((Number) body.get("version")).longValue();
+        Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
+        long version = ((Number) body.get("version")).longValue();
         return new DittoSetResult(version);
     }
 
@@ -94,7 +90,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
 
     /**
      * Atomic create-if-absent. {@code created} is false (with the existing
-     * version) when the key already exists — no write is performed.
+     * version) when the key already exists - no write is performed.
      */
     public DittoSetNxResult setNx(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException, InterruptedException {
@@ -105,7 +101,7 @@ public class DittoHttpClient extends DittoHttpClientBase {
                 .header("Content-Type", "application/octet-stream")
                 .build();
         HttpResponse<String> resp = send(req);
-        throwIfAtomicUnsupported(resp, "SET_NX");
+        DittoAtomicErrorNormalizer.throwIfHttpAtomicUnsupported(resp.body(), resp.statusCode(), "SET_NX");
         assertOk(resp);
         Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
         boolean created = Boolean.TRUE.equals(body.get("created"));
@@ -130,8 +126,6 @@ public class DittoHttpClient extends DittoHttpClientBase {
     public DittoCounterResult incr(String key, long delta, long ttlSecsOnCreate, String namespace)
             throws IOException, InterruptedException {
         validateCoreInputs("set", key, namespace);
-        // Send delta as a JSON string so the int64 survives any consumer that
-        // would coerce a large number to a float (server accepts string or number).
         String body = ttlSecsOnCreate > 0
                 ? mapper.writeValueAsString(Map.of("delta", String.valueOf(delta), "ttl_secs_on_create", ttlSecsOnCreate))
                 : mapper.writeValueAsString(Map.of("delta", String.valueOf(delta)));
@@ -140,42 +134,12 @@ public class DittoHttpClient extends DittoHttpClientBase {
                 .header("Content-Type", "application/json")
                 .build();
         HttpResponse<String> resp = send(req);
-        throwIfAtomicUnsupported(resp, "INCR");
+        DittoAtomicErrorNormalizer.throwIfHttpAtomicUnsupported(resp.body(), resp.statusCode(), "INCR");
         assertOk(resp);
         Map<?, ?> payload = mapper.readValue(resp.body(), Map.class);
         long value = Long.parseLong(String.valueOf(payload.get("value")));
         long version = Long.parseLong(String.valueOf(payload.get("version")));
         return new DittoCounterResult(value, version);
-    }
-
-    /**
-     * An OLD dittod without atomic-primitive routes answers SET_NX/INCR with
-     * 400 (rejects the request shape), 404 (route missing) or 501 (explicitly
-     * unsupported). Normalize all three to {@code UNSUPPORTED_REQUEST}.
-     * TypeMismatch/Overflow are 409 and flow through {@link #assertOk}.
-     */
-    private void throwIfAtomicUnsupported(HttpResponse<String> resp, String operation) {
-        int status = resp.statusCode();
-        if (status != 400 && status != 404 && status != 501) return;
-        try {
-            Map<?, ?> body = mapper.readValue(resp.body(), Map.class);
-            if ("UnsupportedRequest".equals(body.get("error"))) {
-                Object msg = body.get("message");
-                throw new DittoException(
-                        DittoErrorCode.UNSUPPORTED_REQUEST,
-                        msg != null ? msg.toString() : "UnsupportedRequest",
-                        "UnsupportedRequest");
-            }
-        } catch (DittoException e) {
-            throw e;
-        } catch (Exception ignored) {
-            // non-JSON body — fall through to the normalized message
-        }
-        throw new DittoException(
-                DittoErrorCode.UNSUPPORTED_REQUEST,
-                "UnsupportedRequest: server does not support " + operation
-                        + ". Upgrade dittod to a version with atomic primitives.",
-                "UnsupportedRequest");
     }
 
     /** Delete a key. Returns true if the key existed, false if not found. */
@@ -243,5 +207,4 @@ public class DittoHttpClient extends DittoHttpClientBase {
         assertOk(resp);
         return mapper.readValue(resp.body(), DittoStatsResult.class);
     }
-
 }
