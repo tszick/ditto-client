@@ -22,7 +22,12 @@ Requires Go 1.26.0+.
 httpClient := ditto.NewHTTPClient(ditto.HTTPClientOptions{Host: "localhost", Port: 7778})
 stats, _ := httpClient.Stats()
 
-tcp := ditto.NewTCPClient(ditto.TCPClientOptions{Host: "localhost", Port: 7777})
+tcp := ditto.NewTCPClient(ditto.TCPClientOptions{
+    Host: "cache.example.internal",
+    Port: 7777,
+    TLS: true,
+    TLSCACert: "/etc/ssl/certs/ditto-ca.pem",
+})
 _ = tcp.Connect()
 _, _ = tcp.SetString("foo", "bar", 60)
 ```
@@ -43,7 +48,16 @@ http.set("foo", "bar", 60);
 DittoGetResult r = http.get("foo");
 
 // TCP
-DittoTcpClient tcp = new DittoTcpClient("localhost", 7777, null, false, true); // autoReconnect=true
+DittoTcpClient tcp = new DittoTcpClient(
+    "cache.example.internal",
+    7777,
+    System.getenv("DITTO_TCP_TOKEN"),
+    true,
+    true,
+    true,
+    "/etc/ssl/certs/ditto-ca.pem",
+    "cache.example.internal"
+);
 tcp.connect();
 tcp.set("foo", "bar", 0);
 tcp.delete("foo");
@@ -60,7 +74,12 @@ Requires Node.js >= 24. TypeScript source, ships compiled JS + type declarations
 ```ts
 import { DittoTcpClient } from "ditto-client";
 
-const client = new DittoTcpClient({ host: "localhost", port: 7777 });
+const client = new DittoTcpClient({
+  host: "cache.example.internal",
+  port: 7777,
+  tls: true,
+  tlsCaCert: "/etc/ssl/certs/ditto-ca.pem",
+});
 await client.set("foo", "bar", 60);
 const result = await client.get("foo"); // { value: Buffer, version: bigint } | null
 await client.close();
@@ -99,7 +118,13 @@ Requires Python >= 3.11. No external dependencies (stdlib only).
 ```python
 from ditto_client import DittoTcpClient
 
-with DittoTcpClient(host="localhost", port=7777) as client:
+with DittoTcpClient(
+    host="cache.example.internal",
+    port=7777,
+    auth_token="token",
+    tls=True,
+    tls_ca_cert="/etc/ssl/certs/ditto-ca.pem",
+) as client:
     client.set("foo", "bar", ttl_secs=60)
     result = client.get("foo")  # DittoGetResult(value=b"bar", version=1) | None
 ```
@@ -158,9 +183,9 @@ Client impact:
 | Protocol | Default port | Auth |
 |----------|-------------|------|
 | HTTP REST | 7778 | Basic auth (username/password) |
-| TCP binary | 7777 | Auth token |
+| TCP binary | 7777 | Auth token over optional TLS |
 
-Production clients should use HTTPS with certificate verification enabled and strict client-side validation where possible.
+Production clients should use certificate-verified TLS for HTTPS and for direct TCP where `7777` is used, plus strict client-side validation where possible.
 
 HTTP supports TLS. TLS policy is secure-by-default across SDKs:
 
@@ -168,7 +193,7 @@ HTTP supports TLS. TLS policy is secure-by-default across SDKs:
 - Python and Rust reject insecure TLS bypass options.
 - Go ignores legacy insecure TLS bypass flags and keeps certificate verification enabled.
 
-The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Raw TCP does not encrypt tokens or cache payloads. Use raw TCP only on loopback, private trusted networks, or an encrypted underlay such as a service mesh, VPN, or tunnel.
+The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Direct TCP now supports TLS; plaintext TCP should be treated as local/dev or transition-only.
 
 ## Quick test commands
 

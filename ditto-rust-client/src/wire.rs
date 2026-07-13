@@ -492,9 +492,10 @@ fn error_code_name(idx: u64) -> &'static str {
         8 => "CircuitOpen",
         9 => "NamespaceQuotaExceeded",
         10 => "AuthFailed",
-        11 => "UnsupportedRequest",
-        12 => "TypeMismatch",
-        13 => "Overflow",
+        11 => "AccessDenied",
+        12 => "UnsupportedRequest",
+        13 => "TypeMismatch",
+        14 => "Overflow",
         _ => "InternalError",
     }
 }
@@ -705,9 +706,10 @@ mod tests {
 
     #[test]
     fn error_code_names_cover_atomic_primitive_codes() {
-        assert_eq!(error_code_name(11), "UnsupportedRequest");
-        assert_eq!(error_code_name(12), "TypeMismatch");
-        assert_eq!(error_code_name(13), "Overflow");
+        assert_eq!(error_code_name(11), "AccessDenied");
+        assert_eq!(error_code_name(12), "UnsupportedRequest");
+        assert_eq!(error_code_name(13), "TypeMismatch");
+        assert_eq!(error_code_name(14), "Overflow");
     }
 }
 

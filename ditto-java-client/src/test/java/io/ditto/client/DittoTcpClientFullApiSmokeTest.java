@@ -9,6 +9,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.FutureTask;
+import javax.net.ssl.SSLServerSocket;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -71,6 +72,45 @@ class DittoTcpClientFullApiSmokeTest {
         assertThrows(IOException.class, () -> oneResponseClient(
                 response(DittoTcpClient.Wire.RESP_PONG, new byte[0])
         ).deleteByPattern("k*"));
+    }
+
+    @Test
+    void tcpClientCanConnectOverTlsWithCaVerification() throws Exception {
+        try (SSLServerSocket server = (SSLServerSocket) TlsTestSupport.serverContext()
+                .getServerSocketFactory()
+                .createServerSocket(0)) {
+            FutureTask<Void> task = new FutureTask<>(() -> {
+                try (Socket socket = server.accept()) {
+                    DataInputStream in = new DataInputStream(socket.getInputStream());
+                    assertEquals(DittoTcpClient.Wire.REQ_AUTH, readVariant(in));
+                    socket.getOutputStream().write(response(DittoTcpClient.Wire.RESP_AUTH_OK, new byte[0]));
+                    socket.getOutputStream().flush();
+
+                    assertEquals(DittoTcpClient.Wire.REQ_PING, readVariant(in));
+                    socket.getOutputStream().write(response(DittoTcpClient.Wire.RESP_PONG, new byte[0]));
+                    socket.getOutputStream().flush();
+                }
+                return null;
+            });
+            new Thread(task).start();
+
+            try (DittoTcpClient client = new DittoTcpClient(
+                    "127.0.0.1",
+                    server.getLocalPort(),
+                    "token",
+                    false,
+                    false,
+                    1000,
+                    1000,
+                    true,
+                    TlsTestSupport.CERT_PEM,
+                    "localhost"
+            )) {
+                client.connect();
+                assertTrue(client.ping());
+            }
+            task.get();
+        }
     }
 
     private static DittoTcpClient oneResponseClient(byte[] response) throws IOException {

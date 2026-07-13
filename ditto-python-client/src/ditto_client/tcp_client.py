@@ -12,6 +12,7 @@ import socket
 import struct
 import threading
 import errno
+import ssl
 
 from .wire import (
     ClientResponse,
@@ -69,6 +70,9 @@ class DittoTcpClient:
         max_frame_bytes: int = 8 * 1024 * 1024,
         strict_mode: bool = False,
         auto_reconnect: bool = False,
+        tls: bool = False,
+        tls_ca_cert: str | None = None,
+        tls_server_name: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -78,6 +82,9 @@ class DittoTcpClient:
         self._max_frame_bytes = max_frame_bytes
         self._strict_mode = strict_mode
         self._auto_reconnect = auto_reconnect
+        self._tls = tls
+        self._tls_ca_cert = tls_ca_cert.strip() if tls_ca_cert and tls_ca_cert.strip() else None
+        self._tls_server_name = tls_server_name.strip() if tls_server_name and tls_server_name.strip() else None
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
 
@@ -323,6 +330,16 @@ class DittoTcpClient:
         sock = socket.create_connection((self._host, self._port), timeout=self._connect_timeout_secs)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.settimeout(self._socket_timeout_secs)
+        if self._tls:
+            context = ssl.create_default_context()
+            if self._tls_ca_cert is not None:
+                if "BEGIN CERTIFICATE" in self._tls_ca_cert:
+                    context.load_verify_locations(cadata=self._tls_ca_cert)
+                else:
+                    context.load_verify_locations(cafile=self._tls_ca_cert)
+            server_hostname = self._tls_server_name or self._host
+            sock = context.wrap_socket(sock, server_hostname=server_hostname)
+            sock.settimeout(self._socket_timeout_secs)
         self._sock = sock
 
         if self._auth_token is not None:

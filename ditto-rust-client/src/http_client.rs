@@ -1,7 +1,8 @@
 use std::time::Duration;
+use std::fs;
 
 use base64::Engine;
-use reqwest::{Client, Method, StatusCode};
+use reqwest::{Certificate, Client, Method, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -23,6 +24,7 @@ pub struct HttpClientOptions {
     pub connect_timeout: Duration,
     pub strict_mode: bool,
     pub dev_insecure_tls: bool,
+    pub trusted_cert_path: Option<String>,
 }
 
 impl Default for HttpClientOptions {
@@ -37,6 +39,7 @@ impl Default for HttpClientOptions {
             connect_timeout: Duration::from_secs(10),
             strict_mode: false,
             dev_insecure_tls: false,
+            trusted_cert_path: None,
         }
     }
 }
@@ -58,11 +61,25 @@ impl DittoHttpClient {
                 "dev_insecure_tls=true is insecure and is no longer supported. Use a trusted certificate configuration instead.".to_string(),
             ));
         }
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)
-            .danger_accept_invalid_certs(false)
-            .build()?;
+            .danger_accept_invalid_certs(false);
+        if let Some(path) = options
+            .trusted_cert_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let pem = fs::read(path).map_err(|e| {
+                DittoError::Validation(format!("failed to read trusted_cert_path {path:?}: {e}"))
+            })?;
+            let cert = Certificate::from_pem(&pem).map_err(|e| {
+                DittoError::Validation(format!("failed to parse trusted_cert_path {path:?}: {e}"))
+            })?;
+            builder = builder.add_root_certificate(cert);
+        }
+        let client = builder.build()?;
 
         Ok(Self {
             base_url: format!("{scheme}://{}:{}", options.host, options.port),
@@ -436,5 +453,11 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.to_string().contains("no longer supported"));
+    }
+
+    #[test]
+    fn trusted_cert_path_defaults_to_none() {
+        let options = HttpClientOptions::default();
+        assert!(options.trusted_cert_path.is_none());
     }
 }

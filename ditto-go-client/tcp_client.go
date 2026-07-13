@@ -1,10 +1,14 @@
 package ditto
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +18,9 @@ type TCPClientOptions struct {
 	Host          string
 	Port          int
 	AuthToken     string
+	TLS           bool
+	TLSCACert     string
+	TLSServerName string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	Timeout       time.Duration
@@ -26,6 +33,9 @@ type TCPClient struct {
 	host          string
 	port          int
 	authToken     string
+	tlsEnabled    bool
+	tlsCACert     string
+	tlsServerName string
 	connectTimeout time.Duration
 	readTimeout    time.Duration
 	maxFrameBytes uint32
@@ -64,7 +74,17 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 		maxFrame = 8 * 1024 * 1024
 	}
 	return &TCPClient{
-		host: host, port: port, authToken: opts.AuthToken, connectTimeout: connectTimeout, readTimeout: readTimeout, maxFrameBytes: maxFrame, strictMode: opts.StrictMode, autoReconnect: opts.AutoReconnect,
+		host: host,
+		port: port,
+		authToken: opts.AuthToken,
+		tlsEnabled: opts.TLS,
+		tlsCACert: opts.TLSCACert,
+		tlsServerName: opts.TLSServerName,
+		connectTimeout: connectTimeout,
+		readTimeout: readTimeout,
+		maxFrameBytes: maxFrame,
+		strictMode: opts.StrictMode,
+		autoReconnect: opts.AutoReconnect,
 	}
 }
 
@@ -74,7 +94,7 @@ func (c *TCPClient) Connect() error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.connectTimeout)
+	conn, err := c.dialConn()
 	if err != nil {
 		return err
 	}
@@ -115,7 +135,7 @@ func (c *TCPClient) ensureConnectedLocked() error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.connectTimeout)
+	conn, err := c.dialConn()
 	if err != nil {
 		return err
 	}
@@ -149,6 +169,61 @@ func (c *TCPClient) sendLocked(frame []byte) (*tcpResponse, error) {
 		return nil, err
 	}
 	return c.readResponseLocked()
+}
+
+func (c *TCPClient) dialConn() (net.Conn, error) {
+	address := fmt.Sprintf("%s:%d", c.host, c.port)
+	if !c.tlsEnabled {
+		return net.DialTimeout("tcp", address, c.connectTimeout)
+	}
+
+	config, err := c.buildTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	dialer := tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: c.connectTimeout},
+		Config:    config,
+	}
+	return dialer.Dial("tcp", address)
+}
+
+func (c *TCPClient) buildTLSConfig() (*tls.Config, error) {
+	config := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: c.tlsServerName,
+	}
+	if config.ServerName == "" {
+		config.ServerName = c.host
+	}
+	if strings.TrimSpace(c.tlsCACert) == "" {
+		return config, nil
+	}
+
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	caPEM, err := loadTLSCACert(c.tlsCACert)
+	if err != nil {
+		return nil, err
+	}
+	if !rootCAs.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse TLS CA certificate")
+	}
+	config.RootCAs = rootCAs
+	return config, nil
+}
+
+func loadTLSCACert(input string) ([]byte, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty TLS CA certificate input")
+	}
+	if bytes.Contains([]byte(trimmed), []byte("BEGIN CERTIFICATE")) {
+		return []byte(trimmed), nil
+	}
+	return os.ReadFile(trimmed)
 }
 
 func (c *TCPClient) closeConnLocked() {

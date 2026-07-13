@@ -1,9 +1,12 @@
-use std::time::Duration;
+use std::{path::Path, sync::Once, time::Duration};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use rustls::{pki_types::ServerName, ClientConfig, RootCertStore};
+use rustls_pki_types::pem::PemObject;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
+use tokio_rustls::TlsConnector;
 
 use crate::errors::{DittoError, Result};
 use crate::types::{
@@ -13,11 +16,21 @@ use crate::types::{
 use crate::validation::{normalized_namespace, validate_core_inputs, validate_pattern_inputs};
 use crate::wire::{self, ClientResponse};
 
+trait DynStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T> DynStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
+
+type BoxedStream = Box<dyn DynStream>;
+
+static RUSTLS_PROVIDER: Once = Once::new();
+
 #[derive(Debug, Clone)]
 pub struct TcpClientOptions {
     pub host: String,
     pub port: u16,
     pub auth_token: Option<String>,
+    pub tls_enabled: bool,
+    pub tls_ca_cert: Option<String>,
+    pub tls_server_name: Option<String>,
     pub connect_timeout: Duration,
     pub request_timeout: Duration,
     pub max_frame_bytes: u32,
@@ -31,6 +44,9 @@ impl Default for TcpClientOptions {
             host: "localhost".to_string(),
             port: 7777,
             auth_token: None,
+            tls_enabled: false,
+            tls_ca_cert: None,
+            tls_server_name: None,
             connect_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(10),
             max_frame_bytes: 8 * 1024 * 1024,
@@ -40,10 +56,9 @@ impl Default for TcpClientOptions {
     }
 }
 
-#[derive(Debug)]
 pub struct DittoTcpClient {
     options: TcpClientOptions,
-    stream: Mutex<Option<TcpStream>>,
+    stream: Mutex<Option<BoxedStream>>,
 }
 
 impl DittoTcpClient {
@@ -61,23 +76,7 @@ impl DittoTcpClient {
         }
         let stream = self.open_stream().await?;
         *guard = Some(stream);
-        if let Some(token) = &self.options.auth_token {
-            let response = self
-                .send_locked(&mut guard, wire::encode_auth(token))
-                .await?;
-            match response {
-                ClientResponse::AuthOk => {}
-                ClientResponse::Error { code, message } => {
-                    *guard = None;
-                    return Err(DittoError::server(code, message));
-                }
-                _ => {
-                    *guard = None;
-                    return Err(DittoError::Protocol("unexpected auth response".into()));
-                }
-            }
-        }
-        Ok(())
+        self.authenticate_locked(&mut guard).await
     }
 
     pub async fn close(&self) -> Result<()> {
@@ -143,8 +142,6 @@ impl DittoTcpClient {
             .await
     }
 
-    /// Atomic create-if-absent. Returns `created=false` (with the existing
-    /// version) when the key already exists — no write is performed.
     pub async fn set_nx(
         &self,
         key: &str,
@@ -166,8 +163,6 @@ impl DittoTcpClient {
         }
     }
 
-    /// Atomic counter increment. Creates the key at `delta` if absent
-    /// (with `ttl_secs_on_create`); never resets the TTL of an existing key.
     pub async fn incr(
         &self,
         key: &str,
@@ -336,12 +331,16 @@ impl DittoTcpClient {
         }
     }
 
-    async fn ensure_connected_locked(&self, guard: &mut Option<TcpStream>) -> Result<()> {
+    async fn ensure_connected_locked(&self, guard: &mut Option<BoxedStream>) -> Result<()> {
         if guard.is_some() {
             return Ok(());
         }
         let stream = self.open_stream().await?;
         *guard = Some(stream);
+        self.authenticate_locked(guard).await
+    }
+
+    async fn authenticate_locked(&self, guard: &mut Option<BoxedStream>) -> Result<()> {
         if let Some(token) = &self.options.auth_token {
             let response = self.send_locked(guard, wire::encode_auth(token)).await?;
             match response {
@@ -359,17 +358,35 @@ impl DittoTcpClient {
         Ok(())
     }
 
-    async fn open_stream(&self) -> Result<TcpStream> {
+    async fn open_stream(&self) -> Result<BoxedStream> {
         let addr = format!("{}:{}", self.options.host, self.options.port);
         let stream = timeout(self.options.connect_timeout, TcpStream::connect(addr))
             .await
             .map_err(|_| DittoError::Protocol("tcp connect timed out".into()))??;
-        Ok(stream)
+
+        if !self.options.tls_enabled {
+            return Ok(Box::new(stream));
+        }
+
+        install_rustls_provider();
+        let connector = build_tls_connector(self.options.tls_ca_cert.as_deref())?;
+        let server_name = self
+            .options
+            .tls_server_name
+            .clone()
+            .unwrap_or_else(|| self.options.host.clone());
+        let server_name = ServerName::try_from(server_name)
+            .map_err(|_| DittoError::Protocol("invalid TLS server name".into()))?;
+        let tls_stream = timeout(self.options.connect_timeout, connector.connect(server_name, stream))
+            .await
+            .map_err(|_| DittoError::Protocol("tls handshake timed out".into()))?
+            .map_err(|err| DittoError::Protocol(format!("tls handshake failed: {err}")))?;
+        Ok(Box::new(tls_stream))
     }
 
     async fn send_locked(
         &self,
-        guard: &mut Option<TcpStream>,
+        guard: &mut Option<BoxedStream>,
         frame: Vec<u8>,
     ) -> Result<ClientResponse> {
         let stream = guard
@@ -381,7 +398,7 @@ impl DittoTcpClient {
         self.read_response_locked(guard).await
     }
 
-    async fn read_response_locked(&self, guard: &mut Option<TcpStream>) -> Result<ClientResponse> {
+    async fn read_response_locked(&self, guard: &mut Option<BoxedStream>) -> Result<ClientResponse> {
         let stream = guard
             .as_mut()
             .ok_or_else(|| DittoError::Protocol("tcp stream is not connected".into()))?;
@@ -404,6 +421,39 @@ impl DittoTcpClient {
         .map_err(|_| DittoError::Protocol("tcp read timed out".into()))??;
         wire::decode_response(&payload)
     }
+}
+
+fn install_rustls_provider() {
+    RUSTLS_PROVIDER.call_once(|| {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("failed to install rustls crypto provider");
+    });
+}
+
+fn build_tls_connector(ca_cert_path: Option<&str>) -> Result<TlsConnector> {
+    let path = ca_cert_path
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| DittoError::Protocol("tls_ca_cert is required when tls_enabled=true".into()))?;
+    let certs = load_certs(path)?;
+    let mut root_store = RootCertStore::empty();
+    for cert in certs {
+        root_store
+            .add(cert)
+            .map_err(|err| DittoError::Protocol(format!("invalid TLS CA certificate: {err}")))?;
+    }
+
+    let client_config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    Ok(TlsConnector::from(std::sync::Arc::new(client_config)))
+}
+
+fn load_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>> {
+    rustls::pki_types::CertificateDer::pem_file_iter(Path::new(path))
+        .map_err(|err| DittoError::Protocol(format!("opening TLS CA cert '{path}': {err}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|err| DittoError::Protocol(format!("reading TLS CA cert '{path}': {err}")))
 }
 
 #[cfg(test)]
@@ -524,7 +574,7 @@ mod tests {
     #[tokio::test]
     async fn tcp_incr_type_mismatch_maps_to_ditto_error() {
         let port = spawn_scripted_server(vec![vec![test_support::frame_error(
-            12,
+            13,
             "Stored value is not a valid int64 counter",
         )]])
         .await;
@@ -565,6 +615,17 @@ mod tests {
         let client = test_client(port, true, None);
 
         assert!(client.ping().await.unwrap());
+    }
+
+    #[test]
+    fn tls_connector_requires_ca_cert_when_enabled() {
+        let err = match build_tls_connector(None) {
+            Ok(_) => panic!("connector unexpectedly succeeded without CA cert"),
+            Err(err) => err,
+        };
+        assert!(err
+            .to_string()
+            .contains("tls_ca_cert is required when tls_enabled=true"));
     }
 
     fn test_client(port: u16, auto_reconnect: bool, auth_token: Option<&str>) -> DittoTcpClient {

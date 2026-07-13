@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from ditto_client import DittoError, DittoErrorCode
 from ditto_client.http_client_base import DittoHttpClientBase
@@ -41,6 +42,12 @@ class HttpClientBaseTests(unittest.TestCase):
     def test_reject_unauthorized_false_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "no longer supported"):
             DittoHttpClientBase(tls=True, reject_unauthorized=False)
+
+    def test_trusted_cert_path_is_loaded_when_provided(self):
+        with patch("ssl.create_default_context") as create_default_context:
+            ctx = create_default_context.return_value
+            DittoHttpClientBase(tls=True, trusted_cert_path="/tmp/ca.pem")
+            ctx.load_verify_locations.assert_called_once_with(cafile="/tmp/ca.pem")
 
 
 if __name__ == "__main__":

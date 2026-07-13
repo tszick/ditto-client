@@ -7,6 +7,7 @@
  */
 
 import * as https from 'node:https';
+import { readFileSync } from 'node:fs';
 import { DittoError } from './types.js';
 import type { DittoErrorCode } from './types.js';
 
@@ -35,6 +36,8 @@ export interface DittoHttpClientOptions {
   rejectUnauthorized?: boolean;
   /** Insecure TLS bypass is not supported. */
   devInsecureTls?: boolean;
+  /** Optional PEM CA certificate file path for HTTPS trust extension. */
+  trustedCertPath?: string;
   /** Request timeout in milliseconds. Default: 10000 */
   timeoutMs?: number;
   /** Enable retry with exponential backoff on transient failures. Default: true */
@@ -109,6 +112,7 @@ export class DittoHttpClientBase {
       }
       this.agent = new https.Agent({
         rejectUnauthorized: true,
+        ...(opts.trustedCertPath ? { ca: readFileSync(opts.trustedCertPath) } : {}),
       });
     }
 

@@ -2,6 +2,7 @@ package ditto
 
 import (
 	"bytes"
+	"crypto/x509"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ type HTTPClientOptions struct {
 	RejectUnauthorized bool
 	InsecureSkipVerify bool
 	DevInsecureTLS     bool
+	TrustedCertPath    string
 	ConnectTimeout     time.Duration
 	RequestTimeout     time.Duration
 	Timeout            time.Duration
@@ -74,7 +77,22 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 		if opts.InsecureSkipVerify || opts.DevInsecureTLS {
 			log.Print("WARNING: insecure TLS bypass flags are no longer supported and will be ignored; use a trusted certificate configuration instead")
 		}
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: false}
+		tlsConfig := &tls.Config{InsecureSkipVerify: false}
+		if strings.TrimSpace(opts.TrustedCertPath) != "" {
+			pemBytes, err := os.ReadFile(strings.TrimSpace(opts.TrustedCertPath))
+			if err != nil {
+				panic(fmt.Sprintf("failed to read trusted cert path %q: %v", opts.TrustedCertPath, err))
+			}
+			pool, err := x509.SystemCertPool()
+			if err != nil || pool == nil {
+				pool = x509.NewCertPool()
+			}
+			if !pool.AppendCertsFromPEM(pemBytes) {
+				panic(fmt.Sprintf("failed to parse trusted cert path %q", opts.TrustedCertPath))
+			}
+			tlsConfig.RootCAs = pool
+		}
+		tr.TLSClientConfig = tlsConfig
 	}
 	c := &HTTPClient{
 		baseURL: fmt.Sprintf("%s://%s:%d", scheme, host, port),

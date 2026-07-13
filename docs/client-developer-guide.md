@@ -116,6 +116,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both clients.
 - TCP watch APIs are available: `watch(key)`, `waitForWatchEvent()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `new DittoTcpClient(host, port, authToken, strictMode, autoReconnect)`.
+- TCP TLS is available via the TLS-enabled `DittoTcpClient` constructor overload with `tlsEnabled`, `tlsCaCert`, and optional `tlsServerName`.
 - HTTP TLS secure default is enabled when `tls(true)`; insecure TLS bypass options are rejected.
 - Exceptions are surfaced as `IOException`, `InterruptedException`, or Ditto-specific exception types depending on layer.
 
@@ -126,6 +127,7 @@ For long-lived idle watch connections:
 - Pattern operations are available on both HTTP and TCP clients.
 - TCP watch APIs are available: `watch(key)`, `wait_watch_event()`, `unwatch(key)`.
 - TCP optional reconnect retry is available via `auto_reconnect=True`.
+- TCP TLS is available via `tls=True`, `tls_ca_cert`, and optional `tls_server_name`.
 - HTTP TLS secure default is enabled when `tls=True`; `dev_insecure_tls=True` and `reject_unauthorized=False` are insecure and are no longer supported.
 
 ## Go notes
@@ -137,6 +139,7 @@ For long-lived idle watch connections:
 - `DevInsecureTLS: true` and legacy `InsecureSkipVerify: true` are insecure and are ignored; keep certificate verification enabled and trust the certificate properly instead.
 - TCP watch APIs are available: `Watch(key)`, `WaitWatchEvent()`, `Unwatch(key)`.
 - TCP optional reconnect retry is available via `AutoReconnect: true` in `TCPClientOptions`.
+- TCP TLS is available via `TLS: true`, `TLSCACert`, and optional `TLSServerName`.
 
 ## Rust notes
 
@@ -148,9 +151,9 @@ For long-lived idle watch connections:
 
 ## Production transport policy
 
-- Production clients should use HTTPS with certificate verification enabled.
-- Raw TCP authenticates with a token but does not encrypt tokens or cache payloads.
-- Use raw TCP only on loopback, private trusted networks, or an encrypted underlay such as a service mesh, VPN, or tunnel.
+- Production clients should use certificate-verified TLS for both HTTPS and direct TCP where `7777` is used.
+- Direct TCP on `7777` now supports TLS and should be configured with CA trust plus, when needed, an explicit server name override.
+- Plain TCP should be treated as local/dev or transition-only and should not remain the steady-state production path for remote clients.
 - Production examples should enable strict client-side validation where consumer key formats allow it.
 - TCP watch APIs are available: `watch(key, namespace)`, `wait_watch_event()`, `unwatch(key, namespace)`.
 - TCP optional reconnect retry is available via `auto_reconnect: true` in `TcpClientOptions`.
@@ -265,7 +268,16 @@ For each SDK release, retain:
 ### Java
 
 ```java
-try (DittoTcpClient tcp = new DittoTcpClient("localhost", 7777, null, false, true)) {
+try (DittoTcpClient tcp = new DittoTcpClient(
+        "cache.example.internal",
+        7777,
+        System.getenv("DITTO_TCP_TOKEN"),
+        true,
+        true,
+        true,
+        "/etc/ssl/certs/ditto-ca.pem",
+        "cache.example.internal"
+)) {
     tcp.connect();
     tcp.watch("k");
     tcp.set("k", "value");
@@ -279,7 +291,14 @@ try (DittoTcpClient tcp = new DittoTcpClient("localhost", 7777, null, false, tru
 ```python
 from ditto_client import DittoTcpClient
 
-with DittoTcpClient(host="localhost", port=7777, auto_reconnect=True) as tcp:
+with DittoTcpClient(
+    host="cache.example.internal",
+    port=7777,
+    auth_token="token",
+    auto_reconnect=True,
+    tls=True,
+    tls_ca_cert="/etc/ssl/certs/ditto-ca.pem",
+) as tcp:
     tcp.watch("k")
     tcp.set("k", "value")
     ev = tcp.wait_watch_event()
@@ -292,6 +311,8 @@ with DittoTcpClient(host="localhost", port=7777, auto_reconnect=True) as tcp:
 tcp := ditto.NewTCPClient(ditto.TCPClientOptions{
     Host: "localhost",
     Port: 7777,
+    TLS: true,
+    TLSCACert: "/etc/ssl/certs/ditto-ca.pem",
     AutoReconnect: true,
 })
 _ = tcp.Connect()
@@ -308,6 +329,8 @@ _ = ev
 ```rust
 let tcp = ditto_rust_client::DittoTcpClient::new(ditto_rust_client::TcpClientOptions {
     auto_reconnect: true,
+    tls_enabled: true,
+    tls_ca_cert: Some("/etc/ssl/certs/ditto-ca.pem".into()),
     ..ditto_rust_client::TcpClientOptions::default()
 });
 tcp.connect().await?;

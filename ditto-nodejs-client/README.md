@@ -41,7 +41,13 @@ await client.delete('user:1');
 ```typescript
 import { DittoTcpClient } from 'ditto-client';
 
-const client = new DittoTcpClient({ host: 'localhost', port: 7777 });
+const client = new DittoTcpClient({
+  host: 'cache.example.internal',
+  port: 7777,
+  tls: true,
+  tlsCaCert: '/etc/ssl/certs/ditto-ca.pem',
+  authToken: process.env.DITTO_TCP_TOKEN,
+});
 await client.connect();
 
 await client.set('session:abc', 'tok_xyz', 300);
@@ -105,6 +111,9 @@ new DittoTcpClient(opts?: {
   host?: string;                // default: 'localhost'
   port?: number;                // default: 7777
   authToken?: string;           // optional TCP auth token
+  tls?: boolean;                // default: false
+  tlsCaCert?: string;           // PEM string or PEM file path
+  tlsServerName?: string;       // optional TLS server name override
   autoReconnect?: boolean;      // default: false
   maxReconnectAttempts?: number; // default: 0 (unlimited)
   baseBackoffMs?: number;       // default: 200
@@ -243,6 +252,9 @@ const client = new DittoHttpClient({
   rejectUnauthorized: true,
 });
 ```
+
+TCP TLS uses the same secure posture: no insecure bypass option is exposed.
+Use `tls`, `tlsCaCert`, and optionally `tlsServerName` for direct TCP on `7777`.
 
 ---
 

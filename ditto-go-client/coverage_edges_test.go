@@ -279,6 +279,18 @@ func TestTCPEnsureConnectedAuthBranches(t *testing.T) {
 	}
 }
 
+func TestBuildTLSConfigRejectsInvalidCACert(t *testing.T) {
+	client := NewTCPClient(TCPClientOptions{
+		Host:      "127.0.0.1",
+		Port:      7777,
+		TLS:       true,
+		TLSCACert: "-----BEGIN CERTIFICATE-----\nnot-base64\n-----END CERTIFICATE-----",
+	})
+	if _, err := client.buildTLSConfig(); err == nil || !strings.Contains(err.Error(), "failed to parse TLS CA certificate") {
+		t.Fatalf("expected TLS CA parse error, got %v", err)
+	}
+}
+
 func TestHTTPClientPingFalseAndClose(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

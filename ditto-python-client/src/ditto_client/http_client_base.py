@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import ssl
 import urllib.error
 import urllib.parse
@@ -33,6 +34,7 @@ class DittoHttpClientBase:
         password: str | None = None,
         reject_unauthorized: bool = True,
         dev_insecure_tls: bool = False,
+        trusted_cert_path: str | None = None,
         timeout_secs: float = 10.0,
         strict_mode: bool = False,
     ) -> None:
@@ -59,6 +61,9 @@ class DittoHttpClientBase:
                     "reject_unauthorized=False is insecure and is no longer supported. "
                     "Use a trusted certificate configuration instead."
                 )
+            trusted_cert_path = trusted_cert_path.strip() if trusted_cert_path and trusted_cert_path.strip() else None
+            if trusted_cert_path:
+                ctx.load_verify_locations(cafile=trusted_cert_path)
             self._ssl_ctx = ctx
 
     # ------------------------------------------------------------------

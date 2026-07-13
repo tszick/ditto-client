@@ -26,6 +26,8 @@
  */
 
 import * as net from 'node:net';
+import * as tls from 'node:tls';
+import { readFileSync } from 'node:fs';
 import {
   encodeAuth,
   encodeGet,
@@ -58,6 +60,12 @@ export interface DittoTcpClientOptions {
   port?: number;
   /** Optional TCP auth token. */
   authToken?: string;
+  /** Enable TLS on the TCP client connection. Default: false */
+  tls?: boolean;
+  /** Optional CA certificate PEM or PEM file path used for TLS verification. */
+  tlsCaCert?: string;
+  /** Optional TLS server name override used for certificate verification. */
+  tlsServerName?: string;
 
   // ── Auto-reconnect options (DITTO-01) ──────────────────────────────────────
   /**
@@ -104,6 +112,9 @@ export class DittoTcpClient {
   private readonly host: string;
   private readonly port: number;
   private readonly authToken?: string;
+  private readonly tlsEnabled: boolean;
+  private readonly tlsCaCert?: string;
+  private readonly tlsServerName?: string;
 
   private readonly autoReconnect:        boolean;
   private readonly maxReconnectAttempts: number;
@@ -142,6 +153,9 @@ export class DittoTcpClient {
     this.host = opts.host ?? 'localhost';
     this.port = opts.port ?? 7777;
     this.authToken = opts.authToken;
+    this.tlsEnabled = opts.tls ?? false;
+    this.tlsCaCert = opts.tlsCaCert;
+    this.tlsServerName = opts.tlsServerName;
 
     this.autoReconnect        = opts.autoReconnect        ?? false;
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? 0;
@@ -479,15 +493,27 @@ export class DittoTcpClient {
 
     try {
       await new Promise<void>((resolve, reject) => {
-        const sock = new net.Socket();
+        const sock = this.tlsEnabled
+          ? tls.connect({
+              host: this.host,
+              port: this.port,
+              servername: this.tlsServerName ?? (net.isIP(this.host) ? undefined : this.host),
+              ca: resolveTlsCaCert(this.tlsCaCert),
+            })
+          : new net.Socket();
         const connectTimer = setTimeout(() => {
           sock.destroy(new Error(`Connect timeout after ${this.connectTimeoutMs}ms`));
         }, this.connectTimeoutMs);
-        sock.connect(this.port, this.host, () => {
+        const onConnected = () => {
           clearTimeout(connectTimer);
           this.socket = sock;
           resolve();
-        });
+        };
+        if (this.tlsEnabled) {
+          sock.once('secureConnect', onConnected);
+        } else {
+          sock.connect(this.port, this.host, onConnected);
+        }
         sock.once('close', () => clearTimeout(connectTimer));
         sock.on('data',  (chunk: Buffer) => this.onData(chunk));
         sock.on('error', (err: Error)    => this.onError(err));
@@ -646,6 +672,15 @@ function normalizeNamespace(namespace?: string): string | undefined {
 
 function watchCallbackKey(key: string, namespace?: string): string {
   return namespace ? `${namespace}::${key}` : key;
+}
+
+function resolveTlsCaCert(input?: string): string | Buffer | undefined {
+  const trimmed = input?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.includes('BEGIN CERTIFICATE')) {
+    return trimmed;
+  }
+  return readFileSync(trimmed);
 }
 
 function normalizeAtomicUnsupportedError(error: unknown, operation: 'SET_NX' | 'INCR'): Error {
