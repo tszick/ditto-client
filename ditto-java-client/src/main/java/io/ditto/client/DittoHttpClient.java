@@ -1,4 +1,4 @@
-// Generated from api/ditto-http-api.yaml v1.1.1
+// Generated from api/ditto-http-api.yaml v1.1.2
 // DO NOT EDIT MANUALLY - regenerate with: cd src/tools && npm run generate
 
 package io.ditto.client;

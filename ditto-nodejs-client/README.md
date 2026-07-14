@@ -118,7 +118,9 @@ new DittoTcpClient(opts?: {
   maxReconnectAttempts?: number; // default: 0 (unlimited)
   baseBackoffMs?: number;       // default: 200
   maxBackoffMs?: number;        // default: 30000
-  requestTimeoutMs?: number;    // default: 10000
+  connectTimeoutMs?: number;    // default: 10000
+  requestTimeoutMs?: number;    // default: 10000 (per in-flight request)
+  socketIdleTimeoutMs?: number; // default: 0 (disabled)
   maxFrameBytes?: number;       // default: 8 MiB
   strictMode?: boolean;         // default: false
 })
@@ -255,6 +257,11 @@ const client = new DittoHttpClient({
 
 TCP TLS uses the same secure posture: no insecure bypass option is exposed.
 Use `tls`, `tlsCaCert`, and optionally `tlsServerName` for direct TCP on `7777`.
+
+TCP timeout notes:
+- `requestTimeoutMs` limits a single in-flight request/response.
+- Idle connections stay open by default.
+- `socketIdleTimeoutMs` is optional and should only be used when you explicitly want idle sockets closed.
 
 ---
 

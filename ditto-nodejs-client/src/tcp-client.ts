@@ -93,8 +93,10 @@ export interface DittoTcpClientOptions {
   maxBackoffMs?: number;
   /** TCP connect timeout in milliseconds. Default: 10000 */
   connectTimeoutMs?: number;
-  /** Socket inactivity timeout in milliseconds. Default: 10000 */
+  /** Per-request timeout in milliseconds. Default: 10000 */
   requestTimeoutMs?: number;
+  /** Optional socket inactivity timeout in milliseconds. Default: 0 (disabled) */
+  socketIdleTimeoutMs?: number;
   /** Maximum accepted response frame size in bytes. Default: 8 MiB */
   maxFrameBytes?: number;
   /** Enable strict client-side request validation for key/namespace. Default: false */
@@ -107,6 +109,8 @@ interface Waiter {
   reject:  (e: Error) => void;
   /** Encoded frame to (re)send after reconnect. Null for requests already sent. */
   frame:   Buffer | null;
+  timeoutHandle: ReturnType<typeof setTimeout> | null;
+  settled: boolean;
 }
 
 interface WatchRegistration {
@@ -129,6 +133,7 @@ export class DittoTcpClient {
   private readonly maxBackoffMs:         number;
   private readonly connectTimeoutMs:     number;
   private readonly requestTimeoutMs:     number;
+  private readonly socketIdleTimeoutMs:  number;
   private readonly maxFrameBytes:        number;
   private readonly strictMode:           boolean;
 
@@ -170,6 +175,7 @@ export class DittoTcpClient {
     this.maxBackoffMs         = opts.maxBackoffMs         ?? 30_000;
     this.connectTimeoutMs     = opts.connectTimeoutMs     ?? 10_000;
     this.requestTimeoutMs     = opts.requestTimeoutMs     ?? 10_000;
+    this.socketIdleTimeoutMs  = opts.socketIdleTimeoutMs  ?? 0;
     this.maxFrameBytes        = opts.maxFrameBytes        ?? (8 * 1024 * 1024);
     this.strictMode           = opts.strictMode           ?? false;
   }
@@ -367,7 +373,7 @@ export class DittoTcpClient {
       if (!this.socket) {
         if (this.autoReconnect) {
           // Queue for later; circuit breaker check happens on reconnect failure.
-          this.offlineQueue.push({ resolve, reject, frame });
+          this.offlineQueue.push({ resolve, reject, frame, timeoutHandle: null, settled: false });
           return;
         }
         reject(new Error('Not connected. Call connect() first.'));
@@ -375,8 +381,7 @@ export class DittoTcpClient {
       }
 
       // Connected: send immediately and register as in-flight.
-      this.inflight.push({ resolve, reject, frame: null });
-      this.socket.write(frame);
+      this.writeInflight(frame, { resolve, reject, frame: null, timeoutHandle: null, settled: false });
     });
   }
 
@@ -403,7 +408,13 @@ export class DittoTcpClient {
       } catch (err) {
         // Malformed frame — reject the next waiter so the queue doesn't stall.
         const waiter = this.inflight.shift();
-        waiter?.reject(err instanceof Error ? err : new Error(String(err)));
+        if (waiter) {
+          this.clearWaiterTimeout(waiter);
+          if (!waiter.settled) {
+            waiter.settled = true;
+            waiter.reject(err instanceof Error ? err : new Error(String(err)));
+          }
+        }
         continue;
       }
 
@@ -416,6 +427,9 @@ export class DittoTcpClient {
 
       const waiter = this.inflight.shift();
       if (!waiter) continue;
+      this.clearWaiterTimeout(waiter);
+      if (waiter.settled) continue;
+      waiter.settled = true;
       waiter.resolve(decoded);
     }
   }
@@ -429,8 +443,10 @@ export class DittoTcpClient {
   }
 
   private handleDisconnect(err: Error): void {
+    const hadSocket = this.socket !== null;
     this.socket  = null;
     this.recvBuf = Buffer.alloc(0);
+    if (!hadSocket) return;
 
     // Move in-flight requests back to the front of the offline queue so they
     // are retried in order after reconnect.
@@ -440,12 +456,14 @@ export class DittoTcpClient {
     // frame here. We must reject these specific requests.
     // (Keeping frame=null requests in the queue would stall the queue forever.)
     for (const w of toRetry) {
+      this.clearWaiterTimeout(w);
       if (w.frame !== null) {
         // Queued but not yet written — safe to retry.
         this.offlineQueue.unshift(w);
-      } else {
+      } else if (!w.settled) {
         // Already written — response may or may not have been processed.
         // Reject with a retryable error message.
+        w.settled = true;
         w.reject(new Error(`Connection lost before response was received: ${err.message}`));
       }
     }
@@ -525,10 +543,15 @@ export class DittoTcpClient {
         sock.on('data',  (chunk: Buffer) => this.onData(chunk));
         sock.on('error', (err: Error)    => this.onError(err));
         sock.on('close', ()              => this.onClose());
-        sock.setTimeout(this.requestTimeoutMs);
-        sock.on('timeout', () => {
-          sock.destroy(new Error(`Socket timeout after ${this.requestTimeoutMs}ms`));
-        });
+        sock.setKeepAlive(true, 60_000);
+        if (this.socketIdleTimeoutMs > 0) {
+          sock.setTimeout(this.socketIdleTimeoutMs);
+          sock.on('timeout', () => {
+            sock.destroy(new Error(`Socket idle timeout after ${this.socketIdleTimeoutMs}ms`));
+          });
+        } else {
+          sock.setTimeout(0);
+        }
         sock.once('error', reject); // capture initial connect errors
       });
     } catch {
@@ -551,8 +574,7 @@ export class DittoTcpClient {
       let authResp: ClientResponse;
       try {
         authResp = await new Promise<ClientResponse>((resolve, reject) => {
-          this.inflight.push({ resolve, reject, frame: null });
-          this.socket!.write(authFrame);
+          this.writeInflight(authFrame, { resolve, reject, frame: null, timeoutHandle: null, settled: false });
         });
       } catch (err) {
         // Auth send failed — socket already disconnected; reconnect loop will retry.
@@ -584,12 +606,13 @@ export class DittoTcpClient {
       // Send Watch frame directly (bypass send() to avoid adding to inflight before auth).
       const frame = encodeWatch(registration.key, registration.namespace);
       await new Promise<void>((resolve, reject) => {
-        this.inflight.push({
+        this.writeInflight(frame, {
           resolve: () => resolve(),
           reject,
           frame: null,
+          timeoutHandle: null,
+          settled: false,
         });
-        this.socket!.write(frame);
       });
     }
   }
@@ -599,17 +622,48 @@ export class DittoTcpClient {
       const waiter = this.offlineQueue.shift()!;
       if (waiter.frame === null) {
         // Should not happen after handleDisconnect logic, but guard anyway.
+        waiter.settled = true;
         waiter.reject(new Error('Internal: queued request has no frame to send.'));
         continue;
       }
-      this.inflight.push({ resolve: waiter.resolve, reject: waiter.reject, frame: null });
-      this.socket.write(waiter.frame);
+      const frame = waiter.frame;
+      waiter.frame = null;
+      this.writeInflight(frame, waiter);
     }
   }
 
   private rejectOfflineQueue(err: Error): void {
     const queue = this.offlineQueue.splice(0);
-    for (const w of queue) w.reject(err);
+    for (const w of queue) {
+      this.clearWaiterTimeout(w);
+      if (!w.settled) {
+        w.settled = true;
+        w.reject(err);
+      }
+    }
+  }
+
+  private writeInflight(frame: Buffer, waiter: Waiter): void {
+    this.inflight.push(waiter);
+    this.armRequestTimeout(waiter);
+    this.socket!.write(frame);
+  }
+
+  private armRequestTimeout(waiter: Waiter): void {
+    if (this.requestTimeoutMs <= 0) return;
+    waiter.timeoutHandle = setTimeout(() => {
+      waiter.timeoutHandle = null;
+      if (waiter.settled) return;
+      waiter.settled = true;
+      waiter.reject(new Error(`Request timeout after ${this.requestTimeoutMs}ms`));
+    }, this.requestTimeoutMs);
+  }
+
+  private clearWaiterTimeout(waiter: Waiter): void {
+    if (waiter.timeoutHandle !== null) {
+      clearTimeout(waiter.timeoutHandle);
+      waiter.timeoutHandle = null;
+    }
   }
 
   private validateCoreInputs(
