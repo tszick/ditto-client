@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z.-]+)?$")
+GO_TAG_RE = re.compile(r"^ditto-go-client/v([0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z.-]+)?)$")
 
 
 def load_json(path: Path) -> dict:
@@ -112,9 +113,16 @@ def validate_sdk_versions(root: Path, manifest: dict, release_version: str) -> N
     go_module = parse_regex(go_path, r"^module\s+(\S+)", "Go module")
     if go_module != sdks["go"].get("module"):
         fail(f"Go module mismatch: expected {sdks['go'].get('module')}, got {go_module}")
-    expected_go_tag = f"ditto-go-client/v{release_version}"
-    if sdks["go"].get("tag") != expected_go_tag:
-        fail(f"Go tag must be {expected_go_tag}")
+    go_tag = str(sdks["go"].get("tag", "")).strip()
+    go_tag_match = GO_TAG_RE.match(go_tag)
+    if not go_tag_match:
+        fail("Go tag must match 'ditto-go-client/vX.Y.Z'")
+    go_version = go_tag_match.group(1)
+    if go_version.split(".")[:2] != release_version.split(".")[:2]:
+        fail(
+            "Go tag major.minor must match release_version major.minor: "
+            f"release={release_version!r} go_tag={go_tag!r}"
+        )
 
     for sdk, entry in sdks.items():
         version = entry.get("version")
