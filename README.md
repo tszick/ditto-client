@@ -185,15 +185,15 @@ Client impact:
 | HTTP REST | 7778 | Basic auth (username/password) |
 | TCP binary | 7777 | Auth token over optional TLS |
 
-Production clients should use certificate-verified TLS for HTTPS and for direct TCP where `7777` is used, plus strict client-side validation where possible.
+Production clients should use HTTPS with certificate verification enabled.
+Production clients should also use certificate-verified TLS for direct TCP where `7777` is used, plus strict client-side validation where possible.
 
 HTTP supports TLS. TLS policy is secure-by-default across SDKs:
 
 - Node.js and Java reject insecure TLS bypass options.
-- Python and Rust reject insecure TLS bypass options.
-- Go ignores legacy insecure TLS bypass flags and keeps certificate verification enabled.
+- Python, Rust, and Go allow insecure TLS bypass only for development when `DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true` is explicitly set.
 
-The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Direct TCP now supports TLS; plaintext TCP should be treated as local/dev or transition-only.
+The TCP protocol uses protobuf `Envelope` messages with a 4-byte big-endian frame length prefix. Raw TCP does not encrypt tokens or cache payloads unless TLS is enabled. Direct TCP now supports TLS; plaintext TCP should be treated as local/dev or transition-only.
 
 ## Quick test commands
 

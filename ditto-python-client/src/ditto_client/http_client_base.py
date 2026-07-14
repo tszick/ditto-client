@@ -20,6 +20,8 @@ from typing import Any
 
 from .types import DittoError, DittoErrorCode
 
+INSECURE_TLS_DEV_ENV_GATE = "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"
+
 
 class DittoHttpClientBase:
     """Infrastructure base for the generated DittoHttpClient."""
@@ -52,15 +54,25 @@ class DittoHttpClientBase:
         if tls:
             ctx = ssl.create_default_context()
             if dev_insecure_tls:
-                raise ValueError(
-                    "dev_insecure_tls=True is insecure and is no longer supported. "
-                    "Use a trusted certificate configuration instead."
-                )
+                if _allow_insecure_tls_dev():
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                else:
+                    raise ValueError(
+                        "dev_insecure_tls=True is insecure and is no longer supported by default unless "
+                        f"{INSECURE_TLS_DEV_ENV_GATE}=true is set for development use. "
+                        "Use a trusted certificate configuration instead."
+                    )
             if not reject_unauthorized:
-                raise ValueError(
-                    "reject_unauthorized=False is insecure and is no longer supported. "
-                    "Use a trusted certificate configuration instead."
-                )
+                if _allow_insecure_tls_dev():
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                else:
+                    raise ValueError(
+                        "reject_unauthorized=False is insecure and is no longer supported by default unless "
+                        f"{INSECURE_TLS_DEV_ENV_GATE}=true is set for development use. "
+                        "Use a trusted certificate configuration instead."
+                    )
             trusted_cert_path = trusted_cert_path.strip() if trusted_cert_path and trusted_cert_path.strip() else None
             if trusted_cert_path:
                 ctx.load_verify_locations(cafile=trusted_cert_path)
@@ -154,3 +166,8 @@ class DittoHttpClientBase:
     def _url_encode(s: str) -> str:
         """Percent-encode a key for use in a URL path segment."""
         return urllib.parse.quote(s, safe="")
+
+
+def _allow_insecure_tls_dev() -> bool:
+    value = os.getenv(INSECURE_TLS_DEV_ENV_GATE, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}

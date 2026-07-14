@@ -84,7 +84,7 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 		readTimeout:    readTimeout,
 		maxFrameBytes:  maxFrame,
 		strictMode:     opts.StrictMode,
-		autoReconnect:  opts.AutoReconnect,
+		autoReconnect: opts.AutoReconnect,
 	}
 }
 

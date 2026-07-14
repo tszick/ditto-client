@@ -41,6 +41,8 @@ type HTTPClient struct {
 	strictMode bool
 }
 
+const insecureTLSDevEnvGate = "DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV"
+
 func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 	host := opts.Host
 	if host == "" {
@@ -75,9 +77,19 @@ func NewHTTPClient(opts HTTPClientOptions) *HTTPClient {
 	}
 	if opts.TLS {
 		if opts.InsecureSkipVerify || opts.DevInsecureTLS {
-			log.Print("WARNING: insecure TLS bypass flags are no longer supported and will be ignored; use a trusted certificate configuration instead")
+			if allowInsecureTLSDev() {
+				log.Printf(
+					"WARNING: insecure TLS verification is enabled for development because %s is set; do not use this in production",
+					insecureTLSDevEnvGate,
+				)
+			} else {
+				log.Printf(
+					"WARNING: insecure TLS bypass flags require %s=true and will otherwise be ignored; use a trusted certificate configuration instead",
+					insecureTLSDevEnvGate,
+				)
+			}
 		}
-		tlsConfig := &tls.Config{InsecureSkipVerify: false}
+		tlsConfig := &tls.Config{InsecureSkipVerify: allowInsecureTLSDev() && (opts.InsecureSkipVerify || opts.DevInsecureTLS)}
 		if strings.TrimSpace(opts.TrustedCertPath) != "" {
 			pemBytes, err := os.ReadFile(strings.TrimSpace(opts.TrustedCertPath))
 			if err != nil {
@@ -418,6 +430,16 @@ func namespaceHeaderValue(namespace string) map[string]string {
 		return nil
 	}
 	return map[string]string{"X-Ditto-Namespace": ns}
+}
+
+func allowInsecureTLSDev() bool {
+	value := strings.TrimSpace(os.Getenv(insecureTLSDevEnvGate))
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *HTTPClient) setBytes(key string, value []byte, namespace *string, ttl *uint64) (*SetResult, error) {

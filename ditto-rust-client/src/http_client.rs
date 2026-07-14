@@ -1,3 +1,4 @@
+use std::env;
 use std::time::Duration;
 use std::fs;
 
@@ -60,14 +61,16 @@ impl DittoHttpClient {
     pub fn new(options: HttpClientOptions) -> Result<Self> {
         let scheme = if options.tls { "https" } else { "http" };
         if options.tls && options.dev_insecure_tls {
-            return Err(DittoError::Validation(
-                "dev_insecure_tls=true is insecure and is no longer supported. Use a trusted certificate configuration instead.".to_string(),
-            ));
+            if !allow_insecure_tls_dev() {
+                return Err(DittoError::Validation(
+                    "dev_insecure_tls=true is insecure and is no longer supported by default unless DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true is set for development use. Use a trusted certificate configuration instead.".to_string(),
+                ));
+            }
         }
         let mut builder = Client::builder()
             .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)
-            .danger_accept_invalid_certs(false);
+            .danger_accept_invalid_certs(options.tls && options.dev_insecure_tls && allow_insecure_tls_dev());
         if let Some(path) = options
             .trusted_cert_path
             .as_deref()
@@ -357,6 +360,17 @@ impl DittoHttpClient {
         }
         Err(DittoError::server(code, message))
     }
+}
+
+fn allow_insecure_tls_dev() -> bool {
+    matches!(
+        env::var("DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 fn parse_u64_field(raw: &str, field: &str) -> Result<u64> {
