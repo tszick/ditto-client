@@ -105,6 +105,21 @@ fn is_strict_pattern(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+    use serde_json::Value;
+    use std::fs;
+
+    #[derive(Deserialize)]
+    struct ContractSuite {
+        cases: Vec<ContractCase>,
+    }
+
+    #[derive(Deserialize)]
+    struct ContractCase {
+        operation: String,
+        inputs: serde_json::Map<String, Value>,
+        expect: serde_json::Map<String, Value>,
+    }
 
     fn err_text(result: Result<()>) -> String {
         result.unwrap_err().to_string()
@@ -201,5 +216,58 @@ mod tests {
             ))
             .contains("namespace contains unsupported characters")
         );
+    }
+
+    #[test]
+    fn strict_validation_contract() {
+        let raw = fs::read_to_string("../contracts/strict-validation.contract.json").expect("read contract");
+        let suite: ContractSuite = serde_json::from_str(&raw).expect("parse contract");
+
+        for case in suite.cases {
+            match case.operation.as_str() {
+                "validate_core" => {
+                    let result = validate_core_inputs(
+                        case.inputs["strict_mode"].as_bool().unwrap(),
+                        case.inputs["op"].as_str().unwrap(),
+                        case.inputs["key"].as_str().unwrap(),
+                        case.inputs.get("namespace").and_then(Value::as_str),
+                    );
+                    assert_validation_result(result, &case.expect);
+                }
+                "validate_pattern" => {
+                    let result = validate_pattern_inputs(
+                        case.inputs["strict_mode"].as_bool().unwrap(),
+                        case.inputs["op"].as_str().unwrap(),
+                        case.inputs["pattern"].as_str().unwrap(),
+                        case.inputs.get("namespace").and_then(Value::as_str),
+                    );
+                    assert_validation_result(result, &case.expect);
+                }
+                "normalize_namespace" => {
+                    let result = normalized_namespace(
+                        case.inputs["strict_mode"].as_bool().unwrap(),
+                        case.inputs.get("namespace").and_then(Value::as_str),
+                    );
+                    if let Some(expected_error) = case.expect.get("error_contains").and_then(Value::as_str) {
+                        let err = result.unwrap_err().to_string();
+                        assert!(err.contains(expected_error));
+                    } else {
+                        let got = result.unwrap();
+                        let want = case.expect.get("normalized").and_then(Value::as_str).map(str::to_string);
+                        assert_eq!(got, want);
+                    }
+                }
+                other => panic!("unsupported contract operation: {other}"),
+            }
+        }
+    }
+
+    fn assert_validation_result(result: Result<()>, expect: &serde_json::Map<String, Value>) {
+        if expect.get("valid").and_then(Value::as_bool).unwrap_or(false) {
+            assert!(result.is_ok());
+            return;
+        }
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains(expect["error_contains"].as_str().unwrap()));
     }
 }

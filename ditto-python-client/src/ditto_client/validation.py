@@ -6,6 +6,24 @@ STRICT_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 STRICT_PATTERN_RE = re.compile(r"^[A-Za-z0-9._:\-*]+$")
 
 
+def normalized_namespace(strict_mode: bool, namespace: str | None) -> str | None:
+    if namespace is None:
+        return None
+    normalized = namespace.strip()
+    if normalized == "":
+        if strict_mode:
+            raise ValueError("Invalid request: namespace must not be blank when provided.")
+        return None
+    if strict_mode:
+        if "::" in normalized:
+            raise ValueError("Invalid request: namespace must not contain '::'.")
+        if STRICT_TOKEN_RE.fullmatch(normalized) is None:
+            raise ValueError(
+                "Invalid request: namespace contains unsupported characters. Allowed: [A-Za-z0-9._:-]"
+            )
+    return normalized
+
+
 def validate_core_inputs(strict_mode: bool, op: str, key: str, namespace: str | None) -> None:
     if not strict_mode:
         return

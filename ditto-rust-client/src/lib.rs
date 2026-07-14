@@ -1,5 +1,6 @@
 //! Async Rust client library for Ditto (`dittod`).
 
+mod client_internal;
 pub mod errors;
 pub mod http_client;
 pub mod tcp_client;

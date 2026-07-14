@@ -6,6 +6,9 @@ use reqwest::{Certificate, Client, Method, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::client_internal::{
+    atomic_http_unsupported_error_body, is_atomic_unsupported_status, namespace_header_value,
+};
 use crate::errors::{DittoError, Result};
 use crate::types::{
     CounterResult, DeleteByPatternResult, GetResult, SetNxResult, SetResult, SetTtlByPatternResult,
@@ -184,7 +187,8 @@ impl DittoHttpClient {
             )
             .await?;
         if is_atomic_unsupported_status(response.status()) {
-            return Err(atomic_unsupported_error(response, "SET_NX").await);
+            let body = response.bytes().await?;
+            return Err(atomic_http_unsupported_error_body(&body, "SET_NX"));
         }
         let response = self.assert_ok(response).await?;
         let body: SetNxResponse = response.json().await?;
@@ -222,7 +226,8 @@ impl DittoHttpClient {
             )
             .await?;
         if is_atomic_unsupported_status(response.status()) {
-            return Err(atomic_unsupported_error(response, "INCR").await);
+            let body = response.bytes().await?;
+            return Err(atomic_http_unsupported_error_body(&body, "INCR"));
         }
         let response = self.assert_ok(response).await?;
         let body: IncrResponse = response.json().await?;
@@ -323,8 +328,8 @@ impl DittoHttpClient {
         if let (Some(username), Some(password)) = (&self.username, &self.password) {
             request = request.basic_auth(username, Some(password));
         }
-        if let Some(namespace) = namespace.filter(|ns| !ns.trim().is_empty()) {
-            request = request.header("X-Ditto-Namespace", namespace.trim());
+        if let Some(namespace) = namespace_header_value(namespace) {
+            request = request.header("X-Ditto-Namespace", namespace);
         }
         if let Some((content_type, body)) = body {
             request = request.header("Content-Type", content_type).body(body);
@@ -352,31 +357,6 @@ impl DittoHttpClient {
         }
         Err(DittoError::server(code, message))
     }
-}
-
-/// True for the statuses an OLD dittod (no atomic-primitive routes) returns
-/// for SET_NX/INCR: 400 (rejects the request shape), 404 (route missing),
-/// 501 (explicitly unsupported). TypeMismatch/Overflow are 409 and so flow
-/// through the normal error path instead.
-fn is_atomic_unsupported_status(status: StatusCode) -> bool {
-    matches!(status.as_u16(), 400 | 404 | 501)
-}
-
-async fn atomic_unsupported_error(response: reqwest::Response, operation: &str) -> DittoError {
-    let body = response.bytes().await.unwrap_or_default();
-    let payload = serde_json::from_slice::<ErrorResponse>(&body).ok();
-    if payload.as_ref().and_then(|p| p.error.as_deref()) == Some("UnsupportedRequest") {
-        let message = payload
-            .and_then(|p| p.message)
-            .unwrap_or_else(|| "UnsupportedRequest".to_string());
-        return DittoError::server("UnsupportedRequest", message);
-    }
-    DittoError::server(
-        "UnsupportedRequest",
-        format!(
-            "UnsupportedRequest: server does not support {operation}. Upgrade dittod to a version with atomic primitives."
-        ),
-    )
 }
 
 fn parse_u64_field(raw: &str, field: &str) -> Result<u64> {

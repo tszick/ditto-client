@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 
+use crate::client_internal::normalize_atomic_tcp_error;
 use crate::errors::{DittoError, Result};
 use crate::types::{
     CounterResult, DeleteByPatternResult, GetResult, SetNxResult, SetResult, SetTtlByPatternResult,
@@ -155,11 +156,15 @@ impl DittoTcpClient {
         let ttl = ttl_secs.filter(|ttl| *ttl > 0);
         let response = self
             .send_request(wire::encode_set_nx(key, &value, ttl, namespace.as_deref()))
-            .await?;
+            .await
+            .map_err(|err| normalize_atomic_tcp_error(err, "SET_NX"))?;
         match response {
             ClientResponse::SetNx { created, version } => Ok(SetNxResult { created, version }),
             ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
-            _ => Err(DittoError::Protocol("unexpected set_nx response".into())),
+            _ => Err(normalize_atomic_tcp_error(
+                DittoError::Protocol("unexpected set_nx response".into()),
+                "SET_NX",
+            )),
         }
     }
 
@@ -179,11 +184,15 @@ impl DittoTcpClient {
                 ttl_secs_on_create.filter(|ttl| *ttl > 0),
                 namespace.as_deref(),
             ))
-            .await?;
+            .await
+            .map_err(|err| normalize_atomic_tcp_error(err, "INCR"))?;
         match response {
             ClientResponse::Counter { value, version } => Ok(CounterResult { value, version }),
             ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
-            _ => Err(DittoError::Protocol("unexpected incr response".into())),
+            _ => Err(normalize_atomic_tcp_error(
+                DittoError::Protocol("unexpected incr response".into()),
+                "INCR",
+            )),
         }
     }
 
