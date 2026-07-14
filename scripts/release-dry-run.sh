@@ -8,7 +8,7 @@ if [[ -z "${RELEASE_VERSION}" ]]; then
 fi
 
 if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-  echo "invalid release version '${RELEASE_VERSION}' (expected semver-like value, example: 0.2.0)" >&2
+  echo "invalid release version '${RELEASE_VERSION}' (expected semver-like value, example: 1.1.0)" >&2
   exit 2
 fi
 

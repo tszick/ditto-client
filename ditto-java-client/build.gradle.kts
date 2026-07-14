@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.ditto"
-version = "0.2.0"
+version = "1.1.0"
 
 java {
     toolchain {
@@ -47,6 +47,9 @@ tasks.jacocoTestReport {
 tasks.jar {
     archiveVersion.set("")
     manifest {
-        attributes("Implementation-Title" to "ditto-java-client")
+        attributes(
+            "Implementation-Title" to "ditto-java-client",
+            "Implementation-Version" to project.version.toString(),
+        )
     }
 }

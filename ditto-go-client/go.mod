@@ -1,3 +1,3 @@
-module github.com/tszick/ditto-go-client
+module github.com/tszick/ditto-client/ditto-go-client
 
 go 1.26.2

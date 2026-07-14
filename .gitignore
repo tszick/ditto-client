@@ -1,8 +1,11 @@
 # Client dist
 ditto-nodejs-client/dist/
+ditto-nodejs-client/*.tgz
 ditto-nodejs-client/node_modules/
 ditto-java-client/build/
 ditto-java-client/.gradle/
+ditto-python-client/build/
+ditto-python-client/dist/
 ditto-python-client/**/__pycache__/
 ditto-python-client/**/*.pyc
 ditto-python-client/**/*.egg-info/

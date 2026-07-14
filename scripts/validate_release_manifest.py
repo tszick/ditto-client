@@ -112,8 +112,9 @@ def validate_sdk_versions(root: Path, manifest: dict, release_version: str) -> N
     go_module = parse_regex(go_path, r"^module\s+(\S+)", "Go module")
     if go_module != sdks["go"].get("module"):
         fail(f"Go module mismatch: expected {sdks['go'].get('module')}, got {go_module}")
-    if sdks["go"].get("tag") != f"client-v{release_version}":
-        fail(f"Go tag must be client-v{release_version}")
+    expected_go_tag = f"ditto-go-client/v{release_version}"
+    if sdks["go"].get("tag") != expected_go_tag:
+        fail(f"Go tag must be {expected_go_tag}")
 
     for sdk, entry in sdks.items():
         version = entry.get("version")

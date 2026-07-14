@@ -1,6 +1,6 @@
 {
-  "release_version": "0.2.0",
-  "tag": "client-v0.2.0",
+  "release_version": "1.1.0",
+  "tag": "client-v1.1.0",
   "protocol_snapshot": {
     "path": "contracts/protocol-contract.snapshot.json",
     "sha256": "f0e5ce43466e61d7abff469933e67cf02d18101b167a76ee5e41919281b60969"
@@ -23,32 +23,32 @@
     "nodejs": {
       "package_file": "ditto-nodejs-client/package.json",
       "package_name": "ditto-client",
-      "version": "0.2.0",
+      "version": "1.1.0",
       "runtime": "node >=24"
     },
     "python": {
       "package_file": "ditto-python-client/pyproject.toml",
       "package_name": "ditto-client",
-      "version": "0.2.0",
+      "version": "1.1.0",
       "runtime": "python >=3.11"
     },
     "java": {
       "package_file": "ditto-java-client/build.gradle.kts",
       "package_name": "io.ditto:ditto-java-client",
-      "version": "0.2.0",
+      "version": "1.1.0",
       "runtime": "java 21"
     },
     "go": {
       "package_file": "ditto-go-client/go.mod",
-      "module": "github.com/tszick/ditto-go-client",
+      "module": "github.com/tszick/ditto-client/ditto-go-client",
       "version_source": "git tag",
-      "tag": "client-v0.2.0",
+      "tag": "ditto-go-client/v1.1.0",
       "runtime": "go 1.26.2"
     },
     "rust": {
       "package_file": "ditto-rust-client/Cargo.toml",
       "package_name": "ditto-rust-client",
-      "version": "0.2.0",
+      "version": "1.1.0",
       "runtime": "rust 1.95"
     }
   }
