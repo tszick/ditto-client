@@ -1,5 +1,5 @@
 /**
- * DittoHttpClient – generated from api/ditto-http-api.yaml v1.1.0
+ * DittoHttpClient – generated from api/ditto-http-api.yaml v1.1.1
  *
  * DO NOT EDIT MANUALLY.
  * Regenerate with: cd src/tools && npm run generate
