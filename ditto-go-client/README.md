@@ -42,6 +42,12 @@ _, _ = client.SetString("k", "v", 60)
 - `TLSServerName` can override the verification name when the dial target and certificate name differ.
 - No insecure TLS bypass is exposed for TCP.
 
+## TCP timeout behavior
+
+- `ConnectTimeout` only bounds establishing the TCP/TLS connection.
+- `ReadTimeout` bounds an active request/response exchange or an active `WaitWatchEvent()` call.
+- Idle TCP connections are not closed just because a previous request used a short timeout.
+
 ## Watch + reconnect example
 
 ```go

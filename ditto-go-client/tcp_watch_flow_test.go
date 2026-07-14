@@ -122,3 +122,85 @@ func TestTCPClientWatchSetEventUnwatchFlow(t *testing.T) {
 		t.Fatalf("mock server failed: %v", err)
 	}
 }
+
+func TestTCPClientWaitWatchEventAfterIdleStillReceivesEvent(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer conn.Close()
+
+		readVariant := func() (int, error) {
+			head := make([]byte, 4)
+			if _, err := io.ReadFull(conn, head); err != nil {
+				return 0, err
+			}
+			n := binary.BigEndian.Uint32(head)
+			payload := make([]byte, n)
+			if _, err := io.ReadFull(conn, payload); err != nil {
+				return 0, err
+			}
+			field, _, err := decodeClientRequestVariant(payload)
+			return field, err
+		}
+
+		v, err := readVariant()
+		if err != nil {
+			done <- err
+			return
+		}
+		if v != reqWatch {
+			done <- io.ErrUnexpectedEOF
+			return
+		}
+		if _, err := conn.Write(frameClientResponse(rspWatching, nil)); err != nil {
+			done <- err
+			return
+		}
+
+		time.Sleep(75 * time.Millisecond)
+		_, err = conn.Write(frameClientResponse(
+			rspWatchEvent,
+			encodeWatchEventInner("k", []byte("idle-value"), true, 3),
+		))
+		done <- err
+	}()
+
+	addr := ln.Addr().(*net.TCPAddr)
+	client := NewTCPClient(TCPClientOptions{
+		Host:        "127.0.0.1",
+		Port:        addr.Port,
+		ReadTimeout: 50 * time.Millisecond,
+	})
+	defer func() { _ = client.Close() }()
+
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	if err := client.Watch("k"); err != nil {
+		t.Fatalf("watch failed: %v", err)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	ev, err := client.WaitWatchEvent()
+	if err != nil {
+		t.Fatalf("wait watch event failed after idle: %v", err)
+	}
+	if ev.Key != "k" || string(ev.Value) != "idle-value" || ev.Version != 3 {
+		t.Fatalf("unexpected watch event after idle: %+v", ev)
+	}
+
+	if err := <-done; err != nil {
+		t.Fatalf("mock server failed: %v", err)
+	}
+}

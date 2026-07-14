@@ -42,7 +42,7 @@
       "package_file": "ditto-go-client/go.mod",
       "module": "github.com/tszick/ditto-client/ditto-go-client",
       "version_source": "git tag",
-      "tag": "ditto-go-client/v1.1.2",
+      "tag": "ditto-go-client/v1.1.3",
       "runtime": "go 1.26.2"
     },
     "rust": {

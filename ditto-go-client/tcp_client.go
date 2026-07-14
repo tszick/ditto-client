@@ -84,7 +84,7 @@ func NewTCPClient(opts TCPClientOptions) *TCPClient {
 		readTimeout:    readTimeout,
 		maxFrameBytes:  maxFrame,
 		strictMode:     opts.StrictMode,
-		autoReconnect: opts.AutoReconnect,
+		autoReconnect:  opts.AutoReconnect,
 	}
 }
 
@@ -140,9 +140,10 @@ func (c *TCPClient) connectLocked() error {
 }
 
 func (c *TCPClient) sendLocked(frame []byte) (*tcpResponse, error) {
-	if err := c.conn.SetDeadline(time.Now().Add(c.readTimeout)); err != nil {
+	if err := c.setWriteDeadlineLocked(); err != nil {
 		return nil, err
 	}
+	defer c.clearWriteDeadlineLocked()
 	if _, err := c.conn.Write(frame); err != nil {
 		return nil, err
 	}
@@ -227,6 +228,11 @@ func (c *TCPClient) sendRequestLocked(frame []byte) (*tcpResponse, error) {
 }
 
 func (c *TCPClient) readResponseLocked() (*tcpResponse, error) {
+	if err := c.setReadDeadlineLocked(); err != nil {
+		return nil, err
+	}
+	defer c.clearReadDeadlineLocked()
+
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(c.conn, head); err != nil {
 		return nil, err
@@ -240,6 +246,28 @@ func (c *TCPClient) readResponseLocked() (*tcpResponse, error) {
 		return nil, err
 	}
 	return decodeResponse(payload)
+}
+
+func (c *TCPClient) setWriteDeadlineLocked() error {
+	if c.readTimeout <= 0 {
+		return c.conn.SetWriteDeadline(time.Time{})
+	}
+	return c.conn.SetWriteDeadline(time.Now().Add(c.readTimeout))
+}
+
+func (c *TCPClient) clearWriteDeadlineLocked() {
+	_ = c.conn.SetWriteDeadline(time.Time{})
+}
+
+func (c *TCPClient) setReadDeadlineLocked() error {
+	if c.readTimeout <= 0 {
+		return c.conn.SetReadDeadline(time.Time{})
+	}
+	return c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+}
+
+func (c *TCPClient) clearReadDeadlineLocked() {
+	_ = c.conn.SetReadDeadline(time.Time{})
 }
 
 func (c *TCPClient) Ping() (bool, error) {
