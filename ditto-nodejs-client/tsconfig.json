@@ -13,8 +13,6 @@
     "strict":            true,
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
-    "esModuleInterop":   false,
-    "ignoreDeprecations": "6.0",
     "skipLibCheck":      true
   },
   "include": ["src/**/*"],
