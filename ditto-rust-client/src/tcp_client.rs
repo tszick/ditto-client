@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Once, time::Duration};
 
-use rustls::{pki_types::ServerName, ClientConfig, RootCertStore};
+use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 use rustls_pki_types::pem::PemObject;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -89,7 +89,7 @@ impl DittoTcpClient {
     }
 
     pub async fn ping(&self) -> Result<bool> {
-        let response = self.send_request(wire::encode_ping()).await?;
+        let response = self.send_request(wire::encode_ping(), true).await?;
         match response {
             ClientResponse::Pong => Ok(true),
             ClientResponse::Error { code, message } => Err(DittoError::server(code, message)),
@@ -101,7 +101,7 @@ impl DittoTcpClient {
         let namespace = normalized_namespace(self.options.strict_mode, namespace)?;
         validate_core_inputs(self.options.strict_mode, "get", key, namespace.as_deref())?;
         let response = self
-            .send_request(wire::encode_get(key, namespace.as_deref()))
+            .send_request(wire::encode_get(key, namespace.as_deref()), true)
             .await?;
         match response {
             ClientResponse::NotFound => Ok(None),
@@ -123,7 +123,10 @@ impl DittoTcpClient {
         validate_core_inputs(self.options.strict_mode, "set", key, namespace.as_deref())?;
         let ttl = ttl_secs.filter(|ttl| *ttl > 0);
         let response = self
-            .send_request(wire::encode_set(key, &value, ttl, namespace.as_deref()))
+            .send_request(
+                wire::encode_set(key, &value, ttl, namespace.as_deref()),
+                false,
+            )
             .await?;
         match response {
             ClientResponse::Ok { version } => Ok(SetResult { version }),
@@ -155,7 +158,10 @@ impl DittoTcpClient {
         validate_core_inputs(self.options.strict_mode, "set", key, namespace.as_deref())?;
         let ttl = ttl_secs.filter(|ttl| *ttl > 0);
         let response = self
-            .send_request(wire::encode_set_nx(key, &value, ttl, namespace.as_deref()))
+            .send_request(
+                wire::encode_set_nx(key, &value, ttl, namespace.as_deref()),
+                false,
+            )
             .await
             .map_err(|err| normalize_atomic_tcp_error(err, "SET_NX"))?;
         match response {
@@ -178,12 +184,15 @@ impl DittoTcpClient {
         let namespace = normalized_namespace(self.options.strict_mode, namespace)?;
         validate_core_inputs(self.options.strict_mode, "set", key, namespace.as_deref())?;
         let response = self
-            .send_request(wire::encode_incr(
-                key,
-                delta,
-                ttl_secs_on_create.filter(|ttl| *ttl > 0),
-                namespace.as_deref(),
-            ))
+            .send_request(
+                wire::encode_incr(
+                    key,
+                    delta,
+                    ttl_secs_on_create.filter(|ttl| *ttl > 0),
+                    namespace.as_deref(),
+                ),
+                false,
+            )
             .await
             .map_err(|err| normalize_atomic_tcp_error(err, "INCR"))?;
         match response {
@@ -205,7 +214,7 @@ impl DittoTcpClient {
             namespace.as_deref(),
         )?;
         let response = self
-            .send_request(wire::encode_delete(key, namespace.as_deref()))
+            .send_request(wire::encode_delete(key, namespace.as_deref()), false)
             .await?;
         match response {
             ClientResponse::Deleted => Ok(true),
@@ -228,10 +237,10 @@ impl DittoTcpClient {
             namespace.as_deref(),
         )?;
         let response = self
-            .send_request(wire::encode_delete_by_pattern(
-                pattern,
-                namespace.as_deref(),
-            ))
+            .send_request(
+                wire::encode_delete_by_pattern(pattern, namespace.as_deref()),
+                false,
+            )
             .await?;
         match response {
             ClientResponse::PatternDeleted { deleted } => Ok(DeleteByPatternResult { deleted }),
@@ -256,11 +265,14 @@ impl DittoTcpClient {
             namespace.as_deref(),
         )?;
         let response = self
-            .send_request(wire::encode_set_ttl_by_pattern(
-                pattern,
-                ttl_secs.filter(|ttl| *ttl > 0),
-                namespace.as_deref(),
-            ))
+            .send_request(
+                wire::encode_set_ttl_by_pattern(
+                    pattern,
+                    ttl_secs.filter(|ttl| *ttl > 0),
+                    namespace.as_deref(),
+                ),
+                false,
+            )
             .await?;
         match response {
             ClientResponse::PatternTtlUpdated { updated } => Ok(SetTtlByPatternResult { updated }),
@@ -275,7 +287,7 @@ impl DittoTcpClient {
         let namespace = normalized_namespace(self.options.strict_mode, namespace)?;
         validate_core_inputs(self.options.strict_mode, "watch", key, namespace.as_deref())?;
         let response = self
-            .send_request(wire::encode_watch(key, namespace.as_deref()))
+            .send_request(wire::encode_watch(key, namespace.as_deref()), false)
             .await?;
         match response {
             ClientResponse::Watching => Ok(()),
@@ -293,7 +305,7 @@ impl DittoTcpClient {
             namespace.as_deref(),
         )?;
         let response = self
-            .send_request(wire::encode_unwatch(key, namespace.as_deref()))
+            .send_request(wire::encode_unwatch(key, namespace.as_deref()), false)
             .await?;
         match response {
             ClientResponse::Unwatched => Ok(()),
@@ -323,13 +335,19 @@ impl DittoTcpClient {
         }
     }
 
-    async fn send_request(&self, frame: Vec<u8>) -> Result<ClientResponse> {
+    async fn send_request(&self, frame: Vec<u8>, retry_safe: bool) -> Result<ClientResponse> {
         let mut guard = self.stream.lock().await;
         self.ensure_connected_locked(&mut guard).await?;
         match self.send_locked(&mut guard, frame.clone()).await {
             Ok(response) => Ok(response),
             Err(err) => {
                 *guard = None;
+                if !retry_safe {
+                    return Err(DittoError::Protocol(
+                        "request outcome unknown after connection loss; operation was not retried"
+                            .into(),
+                    ));
+                }
                 if self.options.auto_reconnect {
                     self.ensure_connected_locked(&mut guard).await?;
                     self.send_locked(&mut guard, frame).await
@@ -386,10 +404,13 @@ impl DittoTcpClient {
             .unwrap_or_else(|| self.options.host.clone());
         let server_name = ServerName::try_from(server_name)
             .map_err(|_| DittoError::Protocol("invalid TLS server name".into()))?;
-        let tls_stream = timeout(self.options.connect_timeout, connector.connect(server_name, stream))
-            .await
-            .map_err(|_| DittoError::Protocol("tls handshake timed out".into()))?
-            .map_err(|err| DittoError::Protocol(format!("tls handshake failed: {err}")))?;
+        let tls_stream = timeout(
+            self.options.connect_timeout,
+            connector.connect(server_name, stream),
+        )
+        .await
+        .map_err(|_| DittoError::Protocol("tls handshake timed out".into()))?
+        .map_err(|err| DittoError::Protocol(format!("tls handshake failed: {err}")))?;
         Ok(Box::new(tls_stream))
     }
 
@@ -407,7 +428,10 @@ impl DittoTcpClient {
         self.read_response_locked(guard).await
     }
 
-    async fn read_response_locked(&self, guard: &mut Option<BoxedStream>) -> Result<ClientResponse> {
+    async fn read_response_locked(
+        &self,
+        guard: &mut Option<BoxedStream>,
+    ) -> Result<ClientResponse> {
         let stream = guard
             .as_mut()
             .ok_or_else(|| DittoError::Protocol("tcp stream is not connected".into()))?;
@@ -443,7 +467,9 @@ fn install_rustls_provider() {
 fn build_tls_connector(ca_cert_path: Option<&str>) -> Result<TlsConnector> {
     let path = ca_cert_path
         .filter(|path| !path.trim().is_empty())
-        .ok_or_else(|| DittoError::Protocol("tls_ca_cert is required when tls_enabled=true".into()))?;
+        .ok_or_else(|| {
+            DittoError::Protocol("tls_ca_cert is required when tls_enabled=true".into())
+        })?;
     let certs = load_certs(path)?;
     let mut root_store = RootCertStore::empty();
     for cert in certs {
@@ -632,9 +658,20 @@ mod tests {
             Ok(_) => panic!("connector unexpectedly succeeded without CA cert"),
             Err(err) => err,
         };
-        assert!(err
-            .to_string()
-            .contains("tls_ca_cert is required when tls_enabled=true"));
+        assert!(
+            err.to_string()
+                .contains("tls_ca_cert is required when tls_enabled=true")
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_auto_reconnect_does_not_retry_mutation_after_io_error() {
+        let port =
+            spawn_scripted_server(vec![vec![], vec![test_support::frame_counter(1, 1)]]).await;
+        let client = test_client(port, true, None);
+
+        let error = client.incr("counter", 1, None, None).await.unwrap_err();
+        assert!(error.to_string().contains("request outcome unknown"));
     }
 
     fn test_client(port: u16, auto_reconnect: bool, auth_token: Option<&str>) -> DittoTcpClient {

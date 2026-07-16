@@ -119,7 +119,7 @@ class DittoTcpClient:
 
     def ping(self) -> bool:
         """Send a Ping. Returns True when Pong is received."""
-        resp = self._send(encode_ping())
+        resp = self._send(encode_ping(), retry_safe=True)
         return resp.type == "Pong"
 
     def get(self, key: str, namespace: str | None = None) -> DittoGetResult | None:
@@ -128,7 +128,7 @@ class DittoTcpClient:
         The returned ``value`` is the raw bytes stored for the key.
         """
         validate_core_inputs(self._strict_mode, "get", key, namespace)
-        resp = self._send(encode_get(key, namespace))
+        resp = self._send(encode_get(key, namespace), retry_safe=True)
         if resp.type == "NotFound":
             return None
         if resp.type == "Value":
@@ -272,15 +272,20 @@ class DittoTcpClient:
     # Internal send / receive
     # ------------------------------------------------------------------
 
-    def _send(self, frame: bytes) -> ClientResponse:
+    def _send(self, frame: bytes, *, retry_safe: bool = False) -> ClientResponse:
         with self._lock:
             if self._sock is None:
                 raise RuntimeError("Not connected. Call connect() first.")
             try:
                 self._sock.sendall(frame)
                 return self._recv()
-            except (OSError, ConnectionError):
+            except (OSError, ConnectionError) as first:
                 self._close_locked()
+                if not retry_safe:
+                    raise ConnectionError(
+                        "Request outcome unknown after connection loss; "
+                        "operation was not retried"
+                    ) from first
                 if not self._auto_reconnect:
                     raise
                 self._connect_locked()

@@ -170,7 +170,7 @@ public class DittoTcpClient implements Closeable {
 
     /** Send a Ping and return {@code true} when Pong is received. */
     public synchronized boolean ping() throws IOException {
-        return sendAndRead(requestFactory.encodePing()).type == ResponseType.PONG;
+        return sendAndRead(requestFactory.encodePing(), true).type == ResponseType.PONG;
     }
 
     /**
@@ -182,7 +182,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoGetResult get(String key, String namespace) throws IOException {
         validateCoreInputs("get", key, namespace);
-        Response resp = sendAndRead(requestFactory.encodeGet(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeGet(key, namespace), true);
         return switch (resp.type) {
             case VALUE     -> new DittoGetResult(resp.value, resp.version);
             case NOT_FOUND -> null;
@@ -235,7 +235,7 @@ public class DittoTcpClient implements Closeable {
     public synchronized DittoSetResult set(String key, byte[] value, long ttlSecs, String namespace)
             throws IOException {
         validateCoreInputs("set", key, namespace);
-        Response resp = sendAndRead(requestFactory.encodeSet(key, value, ttlSecs, namespace));
+        Response resp = sendAndRead(requestFactory.encodeSet(key, value, ttlSecs, namespace), false);
         return switch (resp.type) {
             case OK    -> new DittoSetResult(resp.version);
             case ERROR -> throw new DittoException(resp.errorCode, resp.message);
@@ -258,7 +258,7 @@ public class DittoTcpClient implements Closeable {
             throws IOException {
         try {
             validateCoreInputs("set", key, namespace);
-            Response resp = sendAndRead(requestFactory.encodeSetNx(key, value, ttlSecs, namespace));
+            Response resp = sendAndRead(requestFactory.encodeSetNx(key, value, ttlSecs, namespace), false);
             return switch (resp.type) {
                 case SET_NX -> new DittoSetNxResult(resp.created, resp.version);
                 case ERROR  -> throw new DittoException(resp.errorCode, resp.message);
@@ -267,6 +267,9 @@ public class DittoTcpClient implements Closeable {
         } catch (DittoException e) {
             throw e;
         } catch (IOException e) {
+            if (e.getMessage() != null && e.getMessage().contains("outcome unknown")) {
+                throw e;
+            }
             throw DittoAtomicErrorNormalizer.normalizeTcpAtomicError(e, "SET_NX");
         }
     }
@@ -289,7 +292,7 @@ public class DittoTcpClient implements Closeable {
             throws IOException {
         try {
             validateCoreInputs("set", key, namespace);
-            Response resp = sendAndRead(requestFactory.encodeIncr(key, delta, ttlSecsOnCreate, namespace));
+            Response resp = sendAndRead(requestFactory.encodeIncr(key, delta, ttlSecsOnCreate, namespace), false);
             return switch (resp.type) {
                 case COUNTER -> new DittoCounterResult(resp.counterValue, resp.version);
                 case ERROR   -> throw new DittoException(resp.errorCode, resp.message);
@@ -298,6 +301,9 @@ public class DittoTcpClient implements Closeable {
         } catch (DittoException e) {
             throw e;
         } catch (IOException e) {
+            if (e.getMessage() != null && e.getMessage().contains("outcome unknown")) {
+                throw e;
+            }
             throw DittoAtomicErrorNormalizer.normalizeTcpAtomicError(e, "INCR");
         }
     }
@@ -311,7 +317,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized boolean delete(String key, String namespace) throws IOException {
         validateCoreInputs("delete", key, namespace);
-        Response resp = sendAndRead(requestFactory.encodeDelete(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeDelete(key, namespace), false);
         return switch (resp.type) {
             case DELETED   -> true;
             case NOT_FOUND -> false;
@@ -329,7 +335,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized DittoDeleteByPatternResult deleteByPattern(String pattern, String namespace) throws IOException {
         validatePatternInputs("deleteByPattern", pattern, namespace);
-        Response resp = sendAndRead(requestFactory.encodeDeleteByPattern(pattern, namespace));
+        Response resp = sendAndRead(requestFactory.encodeDeleteByPattern(pattern, namespace), false);
         return switch (resp.type) {
             case PATTERN_DELETED -> new DittoDeleteByPatternResult(resp.count);
             case ERROR           -> throw new DittoException(resp.errorCode, resp.message);
@@ -349,7 +355,7 @@ public class DittoTcpClient implements Closeable {
     public synchronized DittoSetTtlByPatternResult setTtlByPattern(String pattern, long ttlSecs, String namespace)
             throws IOException {
         validatePatternInputs("setTtlByPattern", pattern, namespace);
-        Response resp = sendAndRead(requestFactory.encodeSetTtlByPattern(pattern, ttlSecs, namespace));
+        Response resp = sendAndRead(requestFactory.encodeSetTtlByPattern(pattern, ttlSecs, namespace), false);
         return switch (resp.type) {
             case PATTERN_TTL_UPDATED -> new DittoSetTtlByPatternResult(resp.count);
             case ERROR               -> throw new DittoException(resp.errorCode, resp.message);
@@ -364,7 +370,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void watch(String key, String namespace) throws IOException {
         validateCoreInputs("watch", key, namespace);
-        Response resp = sendAndRead(requestFactory.encodeWatch(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeWatch(key, namespace), false);
         switch (resp.type) {
             case WATCHING -> {
                 return;
@@ -381,7 +387,7 @@ public class DittoTcpClient implements Closeable {
 
     public synchronized void unwatch(String key, String namespace) throws IOException {
         validateCoreInputs("unwatch", key, namespace);
-        Response resp = sendAndRead(requestFactory.encodeUnwatch(key, namespace));
+        Response resp = sendAndRead(requestFactory.encodeUnwatch(key, namespace), false);
         switch (resp.type) {
             case UNWATCHED -> {
                 return;
@@ -420,12 +426,16 @@ public class DittoTcpClient implements Closeable {
         out.flush();
     }
 
-    private Response sendAndRead(byte[] data) throws IOException {
+    private Response sendAndRead(byte[] data, boolean retrySafe) throws IOException {
         try {
             sendFrame(data);
             return readResponse();
         } catch (IOException first) {
             closeSocketOnly();
+            if (!retrySafe) {
+                throw new IOException(
+                        "Request outcome unknown after connection loss; operation was not retried", first);
+            }
             if (!autoReconnect) {
                 throw first;
             }

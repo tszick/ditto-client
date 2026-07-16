@@ -89,6 +89,9 @@ func normalizeAtomicTCPErr(err error, operation string) error {
 		return de
 	}
 	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "request outcome unknown") {
+		return err
+	}
 	if strings.Contains(msg, "unsupported") ||
 		strings.Contains(msg, "protocol") ||
 		strings.Contains(msg, "decode") ||

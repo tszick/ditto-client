@@ -70,6 +70,46 @@ class DittoTcpClientAutoReconnectSmokeTest {
         }
     }
 
+    @Test
+    void mutationIsNotRetriedAfterConnectionLoss() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            AtomicReference<Throwable> serverError = new AtomicReference<>();
+            Thread thread = new Thread(() -> {
+                try {
+                    Socket first = server.accept();
+                    try (first) {
+                        assertEquals(DittoTcpClient.Wire.REQ_INCR, readRequestVariant(first));
+                    }
+
+                    server.setSoTimeout(500);
+                    try (Socket ignored = server.accept()) {
+                        serverError.set(new AssertionError(
+                                "mutation was retried on a second connection"));
+                    } catch (SocketTimeoutException expected) {
+                        // No retry is the required behavior.
+                    }
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            });
+            thread.start();
+
+            try (DittoTcpClient client =
+                    new DittoTcpClient("127.0.0.1", server.getLocalPort(), null, false, true)) {
+                client.connect();
+                IOException error = assertThrows(
+                        IOException.class,
+                        () -> client.incr("counter", 1));
+                assertTrue(error.getMessage().contains("outcome unknown"));
+            }
+
+            thread.join(2000);
+            assertTrue(!thread.isAlive(), "mock server thread did not finish");
+            if (serverError.get() != null) {
+                throw new AssertionError(serverError.get());
+            }
+        }
+    }
     private static int readRequestVariant(Socket conn) throws Exception {
         DataInputStream in = new DataInputStream(conn.getInputStream());
         int payloadLen = in.readInt();

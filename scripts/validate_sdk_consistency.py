@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +24,11 @@ def read(path: str) -> str:
 def require_contains(path: str, needle: str) -> None:
     if needle not in read(path):
         fail(f"{path} is missing {needle!r}")
+
+
+def require_regex(path: str, pattern: str) -> None:
+    if re.search(pattern, read(path)) is None:
+        fail(f"{path} is missing pattern {pattern!r}")
 
 
 def require_not_contains(path: str, needle: str) -> None:
@@ -53,13 +59,14 @@ def main() -> int:
         require_contains(path, marker)
 
     for path, marker in [
-        ("ditto-nodejs-client/src/tcp-client.ts", "opts.autoReconnect        ?? false"),
-        ("ditto-go-client/tcp_client.go", "autoReconnect: opts.AutoReconnect"),
         ("ditto-python-client/src/ditto_client/tcp_client.py", "auto_reconnect: bool = False"),
         ("ditto-java-client/src/main/java/io/ditto/client/DittoTcpClient.java", "this(host, port, authToken, strictMode, false)"),
         ("ditto-rust-client/src/tcp_client.rs", "auto_reconnect: false"),
     ]:
         require_contains(path, marker)
+
+    require_regex("ditto-nodejs-client/src/tcp-client.ts", r"opts\.autoReconnect\s*\?\?\s*false")
+    require_regex("ditto-go-client/tcp_client.go", r"autoReconnect:\s*opts\.AutoReconnect")
 
     for path in [
         "ditto-go-client/http_client.go",

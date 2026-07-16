@@ -27,6 +27,9 @@ pub(crate) fn normalize_atomic_tcp_error(error: DittoError, operation: &str) -> 
         return error;
     }
     let normalized = error.to_string().to_lowercase();
+    if normalized.contains("request outcome unknown") {
+        return error;
+    }
     if normalized.contains("unsupported")
         || normalized.contains("protocol")
         || normalized.contains("decode")
@@ -75,7 +78,8 @@ mod tests {
 
     #[test]
     fn atomic_errors_contract() {
-        let raw = fs::read_to_string("../contracts/atomic-errors.contract.json").expect("read contract");
+        let raw =
+            fs::read_to_string("../contracts/atomic-errors.contract.json").expect("read contract");
         let suite: ContractSuite = serde_json::from_str(&raw).expect("parse contract");
 
         for case in suite.cases {
@@ -90,9 +94,14 @@ mod tests {
                             case.inputs["error_code"].as_str().unwrap(),
                             case.inputs["error_message"].as_str().unwrap(),
                         ),
-                        _ => DittoError::Protocol(case.inputs["error_message"].as_str().unwrap().to_string()),
+                        _ => DittoError::Protocol(
+                            case.inputs["error_message"].as_str().unwrap().to_string(),
+                        ),
                     };
-                    normalize_atomic_tcp_error(input, case.inputs["operation_name"].as_str().unwrap())
+                    normalize_atomic_tcp_error(
+                        input,
+                        case.inputs["operation_name"].as_str().unwrap(),
+                    )
                 }
                 other => panic!("unsupported contract operation: {other}"),
             };

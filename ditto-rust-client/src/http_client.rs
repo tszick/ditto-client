@@ -1,6 +1,6 @@
 use std::env;
-use std::time::Duration;
 use std::fs;
+use std::time::Duration;
 
 use base64::Engine;
 use reqwest::{Certificate, Client, Method, StatusCode};
@@ -60,17 +60,17 @@ pub struct DittoHttpClient {
 impl DittoHttpClient {
     pub fn new(options: HttpClientOptions) -> Result<Self> {
         let scheme = if options.tls { "https" } else { "http" };
-        if options.tls && options.dev_insecure_tls {
-            if !allow_insecure_tls_dev() {
-                return Err(DittoError::Validation(
-                    "dev_insecure_tls=true is insecure and is no longer supported by default unless DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true is set for development use. Use a trusted certificate configuration instead.".to_string(),
-                ));
-            }
+        if options.tls && options.dev_insecure_tls && !allow_insecure_tls_dev() {
+            return Err(DittoError::Validation(
+                "dev_insecure_tls=true is insecure and is no longer supported by default unless DITTO_CLIENT_ALLOW_INSECURE_TLS_DEV=true is set for development use. Use a trusted certificate configuration instead.".to_string(),
+            ));
         }
         let mut builder = Client::builder()
             .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)
-            .danger_accept_invalid_certs(options.tls && options.dev_insecure_tls && allow_insecure_tls_dev());
+            .danger_accept_invalid_certs(
+                options.tls && options.dev_insecure_tls && allow_insecure_tls_dev(),
+            );
         if let Some(path) = options
             .trusted_cert_path
             .as_deref()
@@ -118,9 +118,13 @@ impl DittoHttpClient {
         let response = self.assert_ok(response).await?;
         let body: GetResponse = response.json().await?;
         let value = match body.value_base64 {
-            Some(value_base64) if !value_base64.is_empty() => base64::engine::general_purpose::STANDARD
-                .decode(value_base64.trim())
-                .map_err(|e| DittoError::Protocol(format!("invalid value_base64 in HTTP response: {e}")))?,
+            Some(value_base64) if !value_base64.is_empty() => {
+                base64::engine::general_purpose::STANDARD
+                    .decode(value_base64.trim())
+                    .map_err(|e| {
+                        DittoError::Protocol(format!("invalid value_base64 in HTTP response: {e}"))
+                    })?
+            }
             _ => body.value.unwrap_or_default().into_bytes(),
         };
         Ok(Some(GetResult {

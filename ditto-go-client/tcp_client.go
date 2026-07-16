@@ -212,12 +212,15 @@ func (c *TCPClient) closeConnLocked() {
 	}
 }
 
-func (c *TCPClient) sendRequestLocked(frame []byte) (*tcpResponse, error) {
+func (c *TCPClient) sendRequestLocked(frame []byte, retrySafe bool) (*tcpResponse, error) {
 	resp, err := c.sendLocked(frame)
 	if err == nil {
 		return resp, nil
 	}
 	c.closeConnLocked()
+	if !retrySafe {
+		return nil, fmt.Errorf("request outcome unknown after connection loss; operation was not retried: %w", err)
+	}
 	if !c.autoReconnect {
 		return nil, err
 	}
@@ -276,7 +279,7 @@ func (c *TCPClient) Ping() (bool, error) {
 	if err := c.ensureConnectedLocked(); err != nil {
 		return false, err
 	}
-	resp, err := c.sendRequestLocked(encodePing())
+	resp, err := c.sendRequestLocked(encodePing(), true)
 	if err != nil {
 		return false, err
 	}
@@ -293,7 +296,7 @@ func (c *TCPClient) Get(key string, namespace ...string) (*GetResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.sendRequestLocked(encodeGet(key, ns))
+	resp, err := c.sendRequestLocked(encodeGet(key, ns), true)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +353,7 @@ func (c *TCPClient) SetNX(key string, value []byte, ttlSecs uint64, namespace ..
 		return nil, err
 	}
 	ttl := optionalUint64(ttlSecs)
-	resp, err := c.sendRequestLocked(encodeSetNX(key, value, ttl, ns))
+	resp, err := c.sendRequestLocked(encodeSetNX(key, value, ttl, ns), false)
 	if err != nil {
 		return nil, normalizeAtomicTCPErr(err, "SET_NX")
 	}
@@ -375,7 +378,7 @@ func (c *TCPClient) Incr(key string, delta int64, ttlSecsOnCreate uint64, namesp
 		return nil, err
 	}
 	ttl := optionalUint64(ttlSecsOnCreate)
-	resp, err := c.sendRequestLocked(encodeIncr(key, optionalInt64(delta), ttl, ns))
+	resp, err := c.sendRequestLocked(encodeIncr(key, optionalInt64(delta), ttl, ns), false)
 	if err != nil {
 		return nil, normalizeAtomicTCPErr(err, "INCR")
 	}
@@ -399,7 +402,7 @@ func (c *TCPClient) Delete(key string, namespace ...string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	resp, err := c.sendRequestLocked(encodeDelete(key, ns))
+	resp, err := c.sendRequestLocked(encodeDelete(key, ns), false)
 	if err != nil {
 		return false, err
 	}
@@ -425,7 +428,7 @@ func (c *TCPClient) DeleteByPattern(pattern string, namespace ...string) (*Delet
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, ns))
+	resp, err := c.sendRequestLocked(encodeDeleteByPattern(pattern, ns), false)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +453,7 @@ func (c *TCPClient) SetTtlByPattern(pattern string, ttlSecs uint64, namespace ..
 		return nil, err
 	}
 	ttl := optionalUint64(ttlSecs)
-	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, ns))
+	resp, err := c.sendRequestLocked(encodeSetTTLByPattern(pattern, ttl, ns), false)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +477,7 @@ func (c *TCPClient) Watch(key string, namespace ...string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.sendRequestLocked(encodeWatch(key, ns))
+	resp, err := c.sendRequestLocked(encodeWatch(key, ns), false)
 	if err != nil {
 		return err
 	}
@@ -498,7 +501,7 @@ func (c *TCPClient) Unwatch(key string, namespace ...string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.sendRequestLocked(encodeUnwatch(key, ns))
+	resp, err := c.sendRequestLocked(encodeUnwatch(key, ns), false)
 	if err != nil {
 		return err
 	}
@@ -544,7 +547,7 @@ func (c *TCPClient) setBytesLocked(key string, value []byte, namespace *string, 
 	if err := validateCoreInputs(c.strictMode, "set", key, namespace); err != nil {
 		return nil, err
 	}
-	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, namespace))
+	resp, err := c.sendRequestLocked(encodeSet(key, value, ttl, namespace), false)
 	if err != nil {
 		return nil, err
 	}
