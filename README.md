@@ -237,3 +237,6 @@ Release and review notes are kept outside the public `docs/` tree.
 
 SDK deployment and release runbook steps live in
 `docs/client-developer-guide.md#sdk-deployment-and-release-checklist`.
+
+Coordinated repository releases use `client-v<version>` tags.
+Go-only module patch releases use `ditto-go-client/v<version>` tags.

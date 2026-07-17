@@ -23,8 +23,14 @@ jobs:
           python-version: "3.11"
       - name: Generate release dry-run plan
         run: bash scripts/release-dry-run.sh "${{ inputs.release_version }}"
+      - name: Validate SDK consistency policy
+        run: python scripts/validate_sdk_consistency.py
+      - name: Validate repo hygiene
+        run: python scripts/validate_repo_hygiene.py
       - name: Validate client security policy
         run: python scripts/validate_client_security_policy.py
+      - name: Validate contract specs
+        run: python contracts/validate_contracts.py
       - name: Upload changelog preview
         uses: actions/upload-artifact@v4
         with:

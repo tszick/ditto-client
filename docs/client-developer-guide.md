@@ -101,8 +101,9 @@ Examples of patterns:
 Watch callback receives `(value, version)` where `value=null` means key deleted.
 
 For long-lived idle watch connections:
-- if client-side socket inactivity timeout is enabled, it may close idle socket,
-- use `requestTimeoutMs: 0` for persistent watch-only streams.
+- `requestTimeoutMs` limits only in-flight requests.
+- `socketIdleTimeoutMs` controls optional idle socket closure separately.
+- keep `socketIdleTimeoutMs` unset or `0` for persistent watch-only streams.
 
 ### HTTP client TLS options
 
@@ -204,6 +205,8 @@ Before publishing:
 - Any protocol enum or error-code change must be reflected across Node.js,
   Java, Python, Go, and Rust before release.
 - Go has no package version field; the release tag is the version contract.
+- Coordinated multi-SDK releases use `client-v<version>`.
+- Go-only patch releases use `ditto-go-client/v<version>`.
 
 ### Production security posture
 

@@ -130,6 +130,31 @@ def validate_sdk_versions(root: Path, manifest: dict, release_version: str) -> N
             fail(f"{sdk} manifest version mismatch: expected {release_version}, got {version}")
 
 
+def validate_workflow_toolchains(root: Path, manifest: dict) -> None:
+    go_runtime = str((manifest.get("sdks") or {}).get("go", {}).get("runtime", "")).strip()
+    go_match = re.fullmatch(r"go\s+(\S+)", go_runtime)
+    if not go_match:
+        fail(f"Go runtime must look like 'go X.Y.Z', got {go_runtime!r}")
+    expected_go = go_match.group(1)
+
+    workflow_paths = [
+        root / ".github/workflows/client-matrix.yml",
+        root / ".github/workflows/coverage-report.yml",
+        root / ".github/workflows/release-dry-run.yml",
+    ]
+    for workflow_path in workflow_paths:
+        workflow = read_text(workflow_path)
+        versions = re.findall(r'go-version:\s*"([^"]+)"', workflow)
+        if not versions:
+            fail(f"no go-version entries found in {workflow_path}")
+        mismatches = sorted({version for version in versions if version != expected_go})
+        if mismatches:
+            fail(
+                "workflow Go version mismatch in "
+                f"{workflow_path}: expected {expected_go}, got {', '.join(mismatches)}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="release-manifest.json")
@@ -142,6 +167,7 @@ def main() -> int:
     release_version = validate_release_version(manifest, args.expected_version)
     validate_protocol_snapshot(root, manifest)
     validate_sdk_versions(root, manifest, release_version)
+    validate_workflow_toolchains(root, manifest)
 
     print(f"release manifest OK: {release_version}")
     print(f"protocol snapshot OK: {manifest['protocol_snapshot']['sha256']}")
