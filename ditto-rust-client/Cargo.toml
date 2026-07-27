@@ -7,7 +7,7 @@ description = "Async Rust client for the Ditto distributed cache"
 license = "MIT"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pki-types = { version = "1", features = ["std"] }
